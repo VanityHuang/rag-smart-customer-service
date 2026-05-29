@@ -1,0 +1,14 @@
+# 运行时数据（chroma 向量库、聊天记录、MD5 去重）
+data/
+
+# Python 缓存
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# 环境变量（API Key 等敏感信息）
+.env
+
+# 操作系统文件
+Thumbs.db
+.DS_Store

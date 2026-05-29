@@ -1,0 +1,269 @@
+"""
+RAG Agent Service — 基于 Function Calling 的自定义 Agent 循环
+使用 ChatTongyi.bind_tools() + 手动迭代循环，0 额外依赖
+"""
+import logging
+
+from langchain_community.chat_models import ChatTongyi
+from langchain_community.embeddings import DashScopeEmbeddings
+from langchain_core.messages import (
+    AIMessage, HumanMessage, SystemMessage, ToolMessage
+)
+from langchain_core.tools import tool
+
+import config_data as config
+from file_history_store import get_history
+from vector_stores import VectorStoreService
+
+logger = logging.getLogger(__name__)
+
+
+class RagAgentService:
+    def __init__(self, vector_service: VectorStoreService = None):
+        self.vector_service = vector_service or VectorStoreService(
+            embedding=DashScopeEmbeddings(model=config.embedding_model_name)
+        )
+        self.chat_model = ChatTongyi(
+            model=config.chat_model_name,
+            temperature=0,
+        )
+        self.tools = self._create_tools()
+        self.tool_map = {t.name: t for t in self.tools}
+        self.model_with_tools = self.chat_model.bind_tools(self.tools)
+
+    def _create_tools(self):
+        """定义 Agent 可用的三个工具"""
+        vector_service = self.vector_service  # 闭包捕获
+
+        @tool
+        def knowledge_base_search(query: str) -> str:
+            """在本地知识库中搜索相关信息。当用户询问关于已有文档、产品知识、FAQ等内容时，优先使用此工具。"""
+            try:
+                retriever = vector_service.get_retriever()
+                docs = retriever.invoke(query)
+                if not docs:
+                    return "【知识库】未找到相关信息。"
+                parts = []
+                for doc in docs:
+                    source = doc.metadata.get("source", "未知来源")
+                    parts.append(f"[来源: {source}]\n{doc.page_content}")
+                return "\n\n".join(parts)
+            except Exception as e:
+                return f"【知识库】搜索出错: {str(e)}"
+
+        @tool
+        def web_search(query: str) -> str:
+            """从互联网搜索最新信息。当知识库中没有相关信息，或需要查询实时信息（新闻、天气、最新动态）时使用此工具。"""
+            import requests
+            from lxml import html
+
+            USER_AGENT = (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/120.0.0.0 Safari/537.36"
+            )
+
+            def _bing_search(q: str) -> list:
+                results = []
+                try:
+                    resp = requests.get(
+                        "https://cn.bing.com/search",
+                        params={"q": q, "count": config.web_search_max_results},
+                        headers={"User-Agent": USER_AGENT},
+                        timeout=10,
+                    )
+                    resp.raise_for_status()
+                    tree = html.fromstring(resp.text)
+                    for li in tree.xpath("//li[contains(@class, 'b_algo')]"):
+                        title_el = li.xpath(".//h2/a")
+                        snippet_el = li.xpath(".//div[contains(@class, 'b_caption')]/p")
+                        if title_el:
+                            title = title_el[0].text_content().strip()
+                            url = title_el[0].get("href", "")
+                            snippet = snippet_el[0].text_content().strip() if snippet_el else ""
+                            results.append(f"[{title}]({url})\n{snippet}")
+                except Exception:
+                    pass
+                return results
+
+            def _baidu_news_search(q: str) -> list:
+                results = []
+                try:
+                    resp = requests.get(
+                        "https://news.baidu.com/ns",
+                        params={"word": q, "pn": 0, "rn": config.web_search_max_results},
+                        headers={
+                            "User-Agent": USER_AGENT,
+                            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                            "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+                        },
+                        timeout=10,
+                    )
+                    resp.raise_for_status()
+                    tree = html.fromstring(resp.text)
+                    for div in tree.xpath("//div[contains(@class, 'result-op')]"):
+                        title_el = div.xpath(".//h3[contains(@class, 'news-title')]/a"
+                                            "|.//a[contains(@class, 'news-title-font')]")
+                        if not title_el:
+                            continue
+                        title = title_el[0].text_content().strip()
+                        url = title_el[0].get("href", "")
+                        # 摘要
+                        snippet_el = div.xpath(
+                            ".//*[contains(@class, 'c-abstract')]"
+                            "|.//*[contains(@class, 'c-span-last')]"
+                        )
+                        snippet = snippet_el[0].text_content().strip() if snippet_el else ""
+                        # 来源
+                        source_el = div.xpath(".//*[contains(@class, 'news-source')]")
+                        source = source_el[0].text_content().strip() if source_el else ""
+                        entry = f"[{title}]({url})\n{snippet}"
+                        if source:
+                            entry += f"\n来源: {source}"
+                        results.append(entry)
+                except Exception:
+                    pass
+                return results
+
+            try:
+                # 1) 先试百度新闻（中文新闻覆盖更好）
+                results = _baidu_news_search(query)
+                if results:
+                    return "\n\n".join(results)
+
+                # 2) 百度无结果 → Bing 通用搜索
+                results = _bing_search(query)
+                if results:
+                    return "\n\n".join(results)
+
+                return "【网络搜索】未找到相关结果。"
+            except Exception as e:
+                return f"【网络搜索】失败: {str(e)}"
+
+        @tool
+        def calculator(expression: str) -> str:
+            """执行数学计算。输入应为数学表达式，如 '2 + 2' 或 '3 * 4 / 2' 或 'sqrt(16)'。"""
+            import ast
+            import math
+            import operator as op
+
+            allowed_ops = {
+                ast.Add: op.add, ast.Sub: op.sub, ast.Mult: op.mul,
+                ast.Div: op.truediv, ast.Pow: op.pow, ast.USub: op.neg,
+                ast.Mod: op.mod, ast.FloorDiv: op.floordiv,
+            }
+            allowed_funcs = {"abs": abs, "round": round, "min": min, "max": max}
+
+            try:
+                tree = ast.parse(expression.strip(), mode='eval')
+
+                def _eval(node):
+                    if isinstance(node, ast.Expression):
+                        return _eval(node.body)
+                    elif isinstance(node, ast.Constant):
+                        if isinstance(node.value, (int, float)):
+                            return node.value
+                        raise ValueError("不支持的数据类型")
+                    elif isinstance(node, ast.BinOp):
+                        return allowed_ops[type(node.op)](_eval(node.left), _eval(node.right))
+                    elif isinstance(node, ast.UnaryOp):
+                        return allowed_ops[type(node.op)](_eval(node.operand))
+                    elif isinstance(node, ast.Call):
+                        func_name = node.func.id if isinstance(node.func, ast.Name) else ""
+                        if func_name == "sqrt":
+                            return math.sqrt(_eval(node.args[0]))
+                        if func_name in allowed_funcs:
+                            return allowed_funcs[func_name](*[_eval(a) for a in node.args])
+                        raise ValueError(f"未知函数: {func_name}")
+                    else:
+                        raise ValueError(f"不支持的语法")
+
+                result = _eval(tree)
+                return f"计算结果: {expression} = {result}"
+            except Exception as e:
+                return f"【计算器】错误: {str(e)}"
+
+        return [knowledge_base_search, web_search, calculator]
+
+    def _execute_agent_loop(self, messages: list) -> AIMessage:
+        """
+        自定义 Agent 迭代循环
+        1. 调用绑定了工具的模型
+        2. 有 tool_calls 则执行工具 -> 追加 ToolMessage -> 继续循环
+        3. 无 tool_calls 则返回最终回答
+        """
+        max_iter = config.agent_max_iterations
+
+        for iteration in range(max_iter):
+            if config.agent_verbose:
+                logger.debug(f"Agent iteration {iteration + 1}/{max_iter}")
+
+            response = self.model_with_tools.invoke(messages)
+
+            if not response.tool_calls:
+                return response  # 最终回答
+
+            # 追加 AI 的工具调用消息到历史
+            messages.append(response)
+
+            # 执行每个工具调用
+            for tc in response.tool_calls:
+                tool_name = tc["name"]
+                tool_args = tc["args"]
+                tool_id = tc["id"]
+
+                if config.agent_verbose:
+                    logger.info(f"  调用工具: {tool_name}({tool_args})")
+
+                if tool_name not in self.tool_map:
+                    result = f"未知工具: {tool_name}"
+                else:
+                    try:
+                        result = self.tool_map[tool_name].invoke(tool_args)
+                    except Exception as e:
+                        result = f"工具执行错误 ({tool_name}): {str(e)}"
+
+                messages.append(ToolMessage(content=str(result), tool_call_id=tool_id))
+
+        # 达到最大迭代次数，强制不带工具调用生成最终回答
+        fallback_msg = SystemMessage(
+            content="你已经达到了最大工具调用次数。请基于已获得的信息给出最终回答。"
+        )
+        messages.append(fallback_msg)
+        return self.chat_model.invoke(messages)
+
+    def invoke(self, message: str, session_id: str = "user_001") -> str:
+        """处理用户消息并返回 Agent 回答"""
+        history = get_history(session_id)
+        user_message = HumanMessage(content=message)
+
+        messages = [
+            SystemMessage(content=config.AGENT_SYSTEM_PROMPT),
+            *history.messages,
+            user_message,
+        ]
+
+        final_response = self._execute_agent_loop(messages)
+
+        history.add_messages([user_message, final_response])
+
+        return final_response.content
+
+    def stream(self, message: str, session_id: str = "user_001"):
+        """流式接口 — 完整执行 Agent 循环后逐字输出最终结果"""
+        final_text = self.invoke(message, session_id)
+        for char in final_text:
+            yield char
+
+
+if __name__ == '__main__':
+    logging.basicConfig(level=logging.DEBUG)
+    service = RagAgentService()
+
+    while True:
+        q = input("\n>>> ")
+        if q.lower() in ("exit", "quit", "q"):
+            break
+        if not q.strip():
+            continue
+        print(service.invoke(q))

@@ -1,0 +1,16 @@
+version: '3.8'
+
+services:
+  rag-agent:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    ports:
+      - "8000:8000"
+    volumes:
+      - ../data/chroma_db:/app/data/chroma_db
+      - ../data/chat_history:/app/data/chat_history
+      - ../data/md5.text:/app/data/md5.text
+    environment:
+      - DASHSCOPE_API_KEY=${DASHSCOPE_API_KEY}
+    restart: unless-stopped
