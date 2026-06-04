@@ -10,7 +10,7 @@
 | 对话模型 | 通义千问 `qwen3-max`（阿里云 DashScope） |
 | 嵌入模型 | `text-embedding-v4`（阿里云 DashScope） |
 | 向量数据库 | Chroma（本地持久化） |
-| 文档解析 | PyMuPDF（PDF）、python-docx（DOCX）、Tesseract OCR（图片） |
+| 文档解析 | PyMuPDF（PDF）、python-docx（DOCX）、PaddleOCR（图片，可切换 Tesseract） |
 | UI | Streamlit（问答界面 + 知识库管理） |
 | API | FastAPI + uvicorn |
 | 容器化 | Docker + docker-compose |

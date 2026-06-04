@@ -52,3 +52,10 @@ ui_port_kb = 8502               # 知识库管理界面端口
 
 # File parsing
 max_file_size_mb = 50
+
+# OCR Configuration
+ocr_backend = "paddleocr"              # "paddleocr" | "pytesseract"（当前环境 Python 3.12 + PaddlePaddle 已安装）
+ocr_language = "ch"                      # PaddleOCR lang 参数（"ch" 支持中英文，需 Python ≤ 3.12）
+pytesseract_language = "chi_sim+eng"     # pytesseract lang 参数
+ocr_confidence_threshold = 0.5           # PaddleOCR 置信度阈值，低于该值的结果将被丢弃
+ocr_preprocessing = False                # 预留：图片预处理开关（暂未实现）
