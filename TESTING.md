@@ -5,7 +5,6 @@
 ## 前置条件
 
 ```bash
-cd RAG
 # 确认环境变量已设置（必须有）
 echo $DASHSCOPE_API_KEY
 
@@ -34,7 +33,6 @@ echo $DASHSCOPE_API_KEY
 ## 第 ① 层：模块级验证（无需 API Key）
 
 ```bash
-cd RAG
 python -m pytest tests/test_modules.py -v
 ```
 
@@ -55,7 +53,6 @@ python tests/test_modules.py pdf docx
 ## 第 ② 层：Agent 对话测试
 
 ```bash
-cd RAG
 python rag_agent.py
 ```
 
@@ -73,7 +70,6 @@ python rag_agent.py
 ## 第 ③ 层：知识库功能测试
 
 ```bash
-cd RAG
 python -m pytest tests/test_knowledge_base.py -v
 ```
 
@@ -88,7 +84,6 @@ python -m pytest tests/test_knowledge_base.py -v
 ## 第 ④ 层：API 接口测试
 
 ```bash
-cd RAG
 python -m pytest tests/test_api.py -v
 ```
 
@@ -104,7 +99,6 @@ python -m pytest tests/test_api.py -v
 
 ```bash
 # 终端 1：问答界面（端口 8501）
-cd RAG
 streamlit run ui/app_qa.py --server.port 8501
 
 # 终端 2：知识库管理（端口 8502）
@@ -122,8 +116,7 @@ streamlit run ui/app_file_uploader.py --server.port 8502
 ## 第 ⑥ 层：Docker 全量测试
 
 ```bash
-cd RAG/docker
-docker-compose up --build
+cd docker && docker-compose up --build
 ```
 
 新开终端测试：
@@ -139,7 +132,6 @@ curl -X POST http://localhost:8000/api/chat \
 ## 第 ⑦ 层：RAG 评估
 
 ```bash
-cd RAG
 python evaluation.py
 ```
 
@@ -155,7 +147,6 @@ python evaluation.py
 ## 目录结构
 
 ```
-RAG/
 ├── ui/                        # Streamlit 界面
 ├── api/                       # FastAPI 后端
 ├── tests/                     # 测试脚本
@@ -179,7 +170,7 @@ RAG/
 
 | 现象 | 原因 | 解决 |
 |------|------|------|
-| `ImportError: No module named 'api'` | 目录不对 | 确保在 `RAG/` 目录下运行 |
+| `ImportError: No module named 'api'` | 目录不对 | 确保在仓库根目录下运行 |
 | `Authentication Error` | API Key 无效 | `echo $DASHSCOPE_API_KEY` 检查 |
 | `Address already in use` | 端口被占 | 关掉占用进程或改端口 |
 | 中文乱码 | 终端编码问题 | Windows 执行 `chcp 65001` |
