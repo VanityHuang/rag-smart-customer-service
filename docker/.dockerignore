@@ -1,0 +1,28 @@
+# Python virtual environment (huge — 1.8GB+)
+.venv/
+
+# Git metadata
+.git/
+.gitignore
+
+# Python cache
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Runtime data (chroma vector store, chat history, MD5 dedup)
+/data/
+
+# Claude Code temp files
+.claude/
+
+# OS junk
+Thumbs.db
+.DS_Store
+
+# Environment file (contains API keys)
+.env
+
+# IDE settings
+.vscode/
+.idea/
