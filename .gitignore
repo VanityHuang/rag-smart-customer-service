@@ -1,5 +1,5 @@
 # 运行时数据（chroma 向量库、聊天记录、MD5 去重）
-data/
+/data/
 
 # Python 缓存
 __pycache__/
