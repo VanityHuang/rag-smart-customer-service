@@ -17,3 +17,7 @@ uvicorn>=0.48.0
 python-multipart>=0.0.9
 streamlit>=1.57.0
 pytest>=8.0.0
+
+# ===== Docker 部署额外系统依赖 =====
+# build-essential (gcc + libc6-dev) — stringzilla 等包编译需要
+# tesseract-ocr + tesseract-ocr-chi-sim + tesseract-ocr-eng — OCR 备选方案

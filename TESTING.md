@@ -166,6 +166,36 @@ python evaluation.py
 └── requirements.txt           # 依赖
 ```
 
+---
+
+## 第 ⑧ 层：生产环境验证（yellowduck.top/rag）
+
+以下命令在服务器上执行，验证 Docker 部署后的 API 和前端：
+
+```bash
+# API 聊天测试
+curl -X POST https://yellowduck.top/rag/api/chat \
+  -H "Content-Type: application/json" \
+  -d '{"message": "你好", "session_id": "test_verify"}'
+
+# 知识库列表
+curl https://yellowduck.top/rag/api/knowledge-base/documents
+
+# 知识库上传
+echo "测试内容" > /tmp/test_rag.txt
+curl -X POST https://yellowduck.top/rag/api/knowledge-base/upload \
+  -F "file=@/tmp/test_rag.txt"
+
+# 前端页面可达
+curl -o /dev/null -w "HTTP %{http_code}" https://yellowduck.top/rag/
+curl -o /dev/null -w "HTTP %{http_code}" https://yellowduck.top/rag/upload.html
+
+# 容器状态
+sudo docker compose -f /home/admin/my_projects/RAG/docker/docker-compose.yml ps
+```
+
+---
+
 ## 快速排查
 
 | 现象 | 原因 | 解决 |
@@ -174,3 +204,7 @@ python evaluation.py
 | `Authentication Error` | API Key 无效 | `echo $DASHSCOPE_API_KEY` 检查 |
 | `Address already in use` | 端口被占 | 关掉占用进程或改端口 |
 | 中文乱码 | 终端编码问题 | Windows 执行 `chcp 65001` |
+| `curl: (7) Failed to connect` | Docker 未启动 | `sudo systemctl start rag-agent` |
+| 知识库为空 | 数据目录未挂载 | 检查 `data/chroma_db/` 是否在 compose volumes 中 |
+| PaddleOCR segfault | 内存不足 | 容器仅 1GB，大图 OCR 可能 OOM；改 `pytesseract` 后端 |
+| Docker 构建 OOM | 构建时内存不够 | `docker compose build --memory=1g` |

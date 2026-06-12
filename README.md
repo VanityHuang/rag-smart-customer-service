@@ -125,6 +125,56 @@ python evaluation.py
   [总计] MRR:      100.00%
 ```
 
+## 生产部署
+
+项目已部署在 `yellowduck.top/rag`，通过 Docker + nginx 反向代理运行。
+
+```
+浏览器 ──https──→ nginx (yellowduck.top)
+                    │
+                    ├── /rag/        → 静态前端（聊天 + 知识库管理）
+                    └── /rag/api/*   → FastAPI Docker 容器 (127.0.0.1:8000)
+```
+
+### 服务器配置
+
+| 组件 | 位置 |
+|------|------|
+| 静态前端 | `/var/www/yellowduck/rag/`（nginx 直接 serving） |
+| Docker 镜像 | `docker-rag-agent:latest` (5.5 GB) |
+| systemd 服务 | `rag-agent.service` |
+| API Key 配置 | `/home/admin/my_projects/RAG/docker/.env` |
+| nginx 配置 | `/etc/nginx/sites-available/yellowduck` |
+
+### 常用运维命令
+
+```bash
+# 启动 / 停止 / 重启
+sudo systemctl start rag-agent.service
+sudo systemctl stop rag-agent.service
+sudo systemctl restart rag-agent.service   # 代码更新后
+
+# 查看日志
+sudo journalctl -u rag-agent.service -f
+sudo docker compose -f /home/admin/my_projects/RAG/docker/docker-compose.yml logs -f
+
+# 更新代码
+cd ~/my_projects/RAG && git pull
+sudo systemctl restart rag-agent.service
+
+# 重建镜像（依赖变更时）
+cd ~/my_projects/RAG/docker
+sudo docker compose build
+sudo systemctl restart rag-agent.service
+```
+
+### Docker 构建说明
+
+- Dockerfile 已将 apt 源替换为阿里云镜像，pip 使用阿里云 PyPI 镜像
+- 安装 `build-essential`（`stringzilla` 等包需要 C 编译）
+- PaddleOCR 模型不在构建时预下载（服务器内存限制），首次运行时会自动拉取
+- 构建前确保 `data/md5.text` 文件存在（`touch` 即可），否则 Docker 会将其创建为目录
+
 ## License
 
 MIT

@@ -32,7 +32,10 @@
 | `ui/` | Streamlit 界面 — `app_qa.py`（问答，支持 Direct/API 双模式）、`app_file_uploader.py`（知识库管理） |
 | `api/` | FastAPI 后端 — `server.py`（入口）、`chat.py`（`POST /api/chat`）、`knowledge_base.py`（上传/列表/删除） |
 | `tests/` | 测试脚本 — `test_modules.py`（模块级）、`test_knowledge_base.py`（知识库 CRUD）、`test_api.py`（API 端到端），`data/`（测试用文档） |
-| `docker/` | Docker 配置 — `Dockerfile` + `docker-compose.yml` |
+| `docker/` | Docker 配置 — `Dockerfile`（apt 阿里云镜像 + build-essential）+ `docker-compose.yml`（127.0.0.1:8000 + 1GB 内存限制） |
+| `/var/www/yellowduck/rag/` | 生产环境静态前端 — `index.html`（聊天界面）、`upload.html`（知识库管理），由 nginx 直接 serving |
+| `/etc/nginx/sites-available/yellowduck` | nginx 反代配置 — `/rag/api/` → Docker、`/rag/` → 静态文件 |
+| `/etc/systemd/system/rag-agent.service` | systemd 服务 — 管理 Docker 容器生命周期 |
 | `data/` | 运行时数据 — `chroma_db/`（向量库）、`chat_history/`（聊天记录）、`md5.text`（MD5 去重） |
 | `requirements.txt` | Python 依赖清单 |
 | `TESTING.md` | 7 层验证体系指南（从模块级到 Docker 全量测试） |
@@ -130,3 +133,58 @@ python -m pytest tests/test_modules.py -v -k "txt"
 python -m pytest tests/test_knowledge_base.py -v
 python -m pytest tests/test_api.py -v
 ```
+
+## 生产部署（yellowduck.top/rag）
+
+项目通过 Docker + nginx 反向代理部署在 `yellowduck.top/rag`。
+
+### 架构
+
+```
+https://yellowduck.top/rag/       → /var/www/yellowduck/rag/ (静态 HTML/JS)
+https://yellowduck.top/rag/api/*  → nginx rewrite → 127.0.0.1:8000 (FastAPI Docker)
+```
+
+### 运维命令
+
+```bash
+# 服务管理
+sudo systemctl start rag-agent.service    # 启动
+sudo systemctl stop rag-agent.service     # 停止
+sudo systemctl restart rag-agent.service  # 重启（代码更新后）
+
+# 查看日志
+sudo journalctl -u rag-agent.service -f
+sudo docker compose -f /home/admin/my_projects/RAG/docker/docker-compose.yml logs -f
+
+# 更新代码
+cd ~/my_projects/RAG && git pull
+sudo systemctl restart rag-agent.service
+
+# 重建镜像（requirements.txt 变更时）
+cd ~/my_projects/RAG/docker
+sudo docker compose build
+sudo systemctl restart rag-agent.service
+```
+
+### Docker 构建注意事项
+
+- Dockerfile 将 apt 源换为阿里云镜像（国内服务器加速）
+- pip 使用阿里云 PyPI 镜像（`-i https://mirrors.aliyun.com/pypi/simple/`）
+- 需要 `build-essential`（`stringzilla` 编译需要 gcc + libc6-dev）
+- PaddleOCR 模型**不在构建时预下载**（服务器内存不足导致 segfault），首次 OCR 调用时自动拉取
+- 构建前确保 `data/md5.text` 文件存在，否则 Docker 会创建同名目录
+- 容器内存限制 1GB（`docker-compose.yml` 中 `mem_limit: 1g`）
+
+### 环境变量
+
+只需一个：`DASHSCOPE_API_KEY`，存储在 `/home/admin/my_projects/RAG/docker/.env`，docker-compose 自动读取。
+
+### 访问地址
+
+| 页面 | URL |
+|------|-----|
+| 聊天界面 | `https://yellowduck.top/rag/` |
+| 知识库管理 | `https://yellowduck.top/rag/upload.html` |
+| 导航页 | `https://yellowduck.top/` |
+| API（内部） | `http://127.0.0.1:8000` |
