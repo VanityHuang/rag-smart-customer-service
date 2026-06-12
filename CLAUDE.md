@@ -17,7 +17,7 @@
 - **UI（生产）**: 静态 HTML/CSS/JS（nginx serving），marked.js Markdown 渲染，SSE 流式消费
 - **API**: FastAPI
 - **流式响应**: SSE（Server-Sent Events），nginx `proxy_buffering off`
-- **认证**: Bearer Token 单密码保护（`guest`）
+- **认证**: Bearer Token 单密码保护（通过 `AUTH_TOKEN` 环境变量配置，默认 `"guest"`）
 - **聊天历史**: 基于 JSON 文件存储 + `sessions_metadata.json` 会话元数据
 - **容器化**: Docker + docker-compose（Dockerfile 使用 `python:3.11-slim`，源码卷挂载 + `--reload` 热重载）
 
@@ -36,8 +36,8 @@
 | `api/` | FastAPI 后端 — `server.py`（入口 + Auth 中间件）、`chat.py`（非流式/流式/历史/会话管理端点）、`knowledge_base.py`（上传/列表/删除） |
 | `tests/` | 测试脚本 — `test_modules.py`（模块级，含 .md 解析 + 会话元数据测试）、`test_knowledge_base.py`（知识库 CRUD）、`test_api.py`（API 端到端），`data/`（测试用文档含 test_markdown.md） |
 | `docker/` | Docker 配置 — `Dockerfile`（apt 阿里云镜像 + build-essential）+ `docker-compose.yml`（127.0.0.1:8000 + 1GB 内存限制） |
-| `/var/www/yellowduck/rag/` | 生产环境静态前端 — `index.html`（聊天界面）、`upload.html`（知识库管理），由 nginx 直接 serving |
-| `/etc/nginx/sites-available/yellowduck` | nginx 反代配置 — `/rag/api/` → Docker、`/rag/` → 静态文件 |
+| `/var/www/<project>/rag/` | 生产环境静态前端 — `index.html`（聊天界面）、`upload.html`（知识库管理），由 nginx 直接 serving |
+| `/etc/nginx/sites-available/&lt;project&gt;` | nginx 反代配置 — `/rag/api/` → Docker、`/rag/` → 静态文件 |
 | `/etc/systemd/system/rag-agent.service` | systemd 服务 — 管理 Docker 容器生命周期 |
 | `data/` | 运行时数据 — `chroma_db/`（向量库）、`chat_history/`（聊天记录 + `sessions_metadata.json` 会话注册表）、`md5.text`（MD5 去重） |
 | `requirements.txt` | Python 依赖清单 |
@@ -109,7 +109,7 @@ OCR（双后端可配置）：
 - `ocr_confidence_threshold`（0.5）：PaddleOCR 置信度阈值
 
 Auth：
-- `auth_token`（`"guest"`）：API 认证共享密钥
+- `auth_token`（默认 `"guest"`，可通过 `AUTH_TOKEN` 环境变量覆盖）：API 认证共享密钥
 
 ## 常用命令
 
@@ -149,16 +149,16 @@ python -m pytest tests/test_knowledge_base.py -v
 python -m pytest tests/test_api.py -v
 ```
 
-## 生产部署（yellowduck.top/rag）
+## 生产部署（<your-domain.com>/rag）
 
-项目通过 Docker + nginx 反向代理部署在 `yellowduck.top/rag`。
+项目通过 Docker + nginx 反向代理部署在 `<your-domain.com>/rag`。
 
 ### 架构
 
 ```
-https://yellowduck.top/rag/               → /var/www/yellowduck/rag/ (静态 HTML/JS)
-https://yellowduck.top/rag/api/chat/stream→ nginx proxy_buffering off → 127.0.0.1:8000 (SSE)
-https://yellowduck.top/rag/api/*          → nginx rewrite → 127.0.0.1:8000 (FastAPI Docker)
+https://<your-domain.com>/rag/               → /var/www/<project>/rag/ (静态 HTML/JS)
+https://<your-domain.com>/rag/api/chat/stream→ nginx proxy_buffering off → 127.0.0.1:8000 (SSE)
+https://<your-domain.com>/rag/api/*          → nginx rewrite → 127.0.0.1:8000 (FastAPI Docker)
 ```
 
 ### 热重载开发
@@ -205,13 +205,13 @@ sudo docker compose up -d
 
 ### 环境变量
 
-只需一个：`DASHSCOPE_API_KEY`，存储在 `/home/admin/my_projects/RAG/docker/.env`，docker-compose 自动读取。
+需要两个：`DASHSCOPE_API_KEY` 和 `AUTH_TOKEN`，存储在 `docker/.env`，docker-compose 自动读取。
 
 ### 访问地址
 
 | 页面 | URL |
 |------|-----|
-| 聊天界面 | `https://yellowduck.top/rag/` |
-| 知识库管理 | `https://yellowduck.top/rag/upload.html` |
-| 导航页 | `https://yellowduck.top/` |
+| 聊天界面 | `https://<your-domain.com>/rag/` |
+| 知识库管理 | `https://<your-domain.com>/rag/upload.html` |
+| 导航页 | `https://<your-domain.com>/` |
 | API（内部） | `http://127.0.0.1:8000` |

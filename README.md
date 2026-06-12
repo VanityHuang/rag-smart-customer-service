@@ -109,7 +109,7 @@ RAG/
 
 ## API 端点
 
-所有 API 端点需要 `Authorization: Bearer guest` 请求头。
+所有 API 端点需要 `Authorization: Bearer <token>` 请求头（token 通过 `AUTH_TOKEN` 环境变量配置）。
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
@@ -150,10 +150,10 @@ python evaluation.py
 
 ## 生产部署
 
-项目已部署在 `yellowduck.top/rag`，通过 Docker + nginx 反向代理运行。
+项目已部署在 `<your-domain.com>/rag`，通过 Docker + nginx 反向代理运行。
 
 ```
-浏览器 ──https──→ nginx (yellowduck.top)
+浏览器 ──https──→ nginx (<your-domain.com>)
                    │
                    ├── /rag/               → 静态前端（聊天 + 知识库管理）
                    ├── /rag/api/chat/stream→ SSE 流式端点（proxy_buffering off）
@@ -164,11 +164,11 @@ python evaluation.py
 
 | 组件 | 位置 |
 |------|------|
-| 静态前端 | `/var/www/yellowduck/rag/`（nginx 直接 serving） |
+| 静态前端 | `/var/www/<project>/rag/`（nginx 直接 serving） |
 | Docker 镜像 | `docker-rag-agent:latest` (~1.3 GB) |
 | systemd 服务 | `rag-agent.service` |
 | API Key 配置 | `/home/admin/my_projects/RAG/docker/.env` |
-| nginx 配置 | `/etc/nginx/sites-available/yellowduck` |
+| nginx 配置 | `/etc/nginx/sites-available/&lt;project&gt;` |
 
 ### 常用运维命令
 
@@ -204,15 +204,15 @@ sudo docker compose up -d
 
 ### 环境变量
 
-只需一个：`DASHSCOPE_API_KEY`，存储在 `/home/admin/my_projects/RAG/docker/.env`，docker-compose 自动读取。
+需要两个：`DASHSCOPE_API_KEY` 和 `AUTH_TOKEN`，存储在 `docker/.env`，docker-compose 自动读取。
 
 ### 访问地址
 
 | 页面 | URL |
 |------|-----|
-| 聊天界面 | `https://yellowduck.top/rag/` |
-| 知识库管理 | `https://yellowduck.top/rag/upload.html` |
-| 导航页 | `https://yellowduck.top/` |
+| 聊天界面 | `https://<your-domain.com>/rag/` |
+| 知识库管理 | `https://<your-domain.com>/rag/upload.html` |
+| 导航页 | `https://<your-domain.com>/` |
 | API（内部） | `http://127.0.0.1:8000` |
 
 ## License

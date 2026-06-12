@@ -20,6 +20,7 @@ services:
       - ../data/md5.text:/app/data/md5.text
     environment:
       - DASHSCOPE_API_KEY=${DASHSCOPE_API_KEY}
+      - AUTH_TOKEN=${AUTH_TOKEN}
     command: uvicorn api.server:app --host 0.0.0.0 --port 8000 --reload
     mem_limit: 1g
     user: "1000:1000"
