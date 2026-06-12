@@ -4,7 +4,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 """
 基于Streamlit完成WEB网页上传服务
-支持格式: .txt, .pdf, .docx, .png, .jpg, .jpeg, .bmp, .tiff
+支持格式: .txt, .md, .pdf, .docx, .png, .jpg, .jpeg, .bmp, .tiff
 """
 import streamlit as st
 from knowledge_base import KnowledgeBaseService
@@ -21,7 +21,7 @@ st.subheader("上传文档")
 
 uploaded_file = st.file_uploader(
     "请选择文件",
-    type=['txt', 'pdf', 'docx', 'png', 'jpg', 'jpeg', 'bmp', 'tiff'],
+    type=['txt', 'md', 'pdf', 'docx', 'png', 'jpg', 'jpeg', 'bmp', 'tiff'],
     accept_multiple_files=False,
 )
 
