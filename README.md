@@ -91,6 +91,9 @@ RAG/
 ├── docker/                # 容器配置
 │   ├── Dockerfile
 │   └── docker-compose.yml
+├── web/                   # 生产环境静态前端
+│   ├── index.html         # 聊天界面
+│   └── upload.html        # 知识库管理
 ├── tests/                 # 测试
 │   └── data/              # 测试文档（.txt/.pdf/.docx/.png/.md）
 ├── data/                  # 运行时数据（git ignored）
@@ -155,7 +158,7 @@ python evaluation.py
 ```
 浏览器 ──https──→ nginx (<your-domain.com>)
                    │
-                   ├── /rag/               → 静态前端（聊天 + 知识库管理）
+                   ├── /rag/               → web/ 静态前端（聊天 + 知识库管理）
                    ├── /rag/api/chat/stream→ SSE 流式端点（proxy_buffering off）
                    └── /rag/api/*          → FastAPI Docker 容器 (127.0.0.1:8000)
 ```
@@ -164,7 +167,7 @@ python evaluation.py
 
 | 组件 | 位置 |
 |------|------|
-| 静态前端 | `/var/www/<project>/rag/`（nginx 直接 serving） |
+| 静态前端 | `web/`（复制到 nginx serving 目录） |
 | Docker 镜像 | `docker-rag-agent:latest` (~1.3 GB) |
 | systemd 服务 | `rag-agent.service` |
 | API Key 配置 | `/home/admin/my_projects/RAG/docker/.env` |

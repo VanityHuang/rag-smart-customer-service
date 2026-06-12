@@ -1,0 +1,627 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RAG 智能客服 — yellowduck.top</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans SC", sans-serif;
+    background: #0f172a;
+    color: #e2e8f0;
+    height: 100vh;
+    overflow: hidden;
+  }
+
+  /* ── 登录叠加层 ── */
+  .login-overlay {
+    position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+    background: rgba(15, 23, 42, 0.92);
+    display: flex; align-items: center; justify-content: center;
+    z-index: 1000;
+  }
+  .login-card {
+    background: #1e293b; border: 1px solid #334155; border-radius: 16px;
+    padding: 36px 32px; width: 360px; max-width: 90vw; text-align: center;
+  }
+  .login-card h2 { font-size: 1.25rem; color: #f1f5f9; margin-bottom: 8px; }
+  .login-card p { font-size: 0.85rem; color: #94a3b8; margin-bottom: 20px; }
+  .login-card input[type="password"] {
+    width: 100%; padding: 10px 14px; border-radius: 10px;
+    border: 1px solid #475569; background: #0f172a; color: #e2e8f0;
+    font-size: 0.9rem; outline: none; margin-bottom: 16px;
+    transition: border-color 0.2s;
+  }
+  .login-card input[type="password"]:focus { border-color: #2563eb; }
+  .login-card button {
+    width: 100%; padding: 10px 0; border-radius: 10px; border: none;
+    background: #2563eb; color: #fff; font-size: 0.9rem; font-weight: 500;
+    cursor: pointer; transition: background 0.2s;
+  }
+  .login-card button:hover { background: #1d4ed8; }
+  .login-error { color: #f87171; font-size: 0.8rem; margin-top: 12px; min-height: 20px; }
+
+  /* ── 布局 ── */
+  .app-layout { display: flex; height: 100vh; overflow: hidden; }
+
+  /* ── 侧边栏 ── */
+  .sidebar {
+    width: 260px; min-width: 260px; background: #1e293b;
+    border-right: 1px solid #334155; display: flex; flex-direction: column;
+    height: 100vh; transition: margin-left 0.25s ease; flex-shrink: 0;
+  }
+  .sidebar.collapsed { margin-left: -260px; }
+
+  .sidebar-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 12px 14px; border-bottom: 1px solid #334155; flex-shrink: 0;
+  }
+  .sidebar-header h2 { font-size: 0.95rem; color: #f1f5f9; }
+
+  .sidebar-new-btn {
+    margin: 10px 12px; padding: 10px 0; border-radius: 10px;
+    border: 1px solid #334155; background: transparent; color: #e2e8f0;
+    font-size: 0.85rem; cursor: pointer; transition: background 0.2s; flex-shrink: 0;
+  }
+  .sidebar-new-btn:hover { background: #334155; }
+
+  .session-list {
+    flex: 1; overflow-y: auto; padding: 0 8px;
+  }
+  .session-list::-webkit-scrollbar { width: 4px; }
+  .session-list::-webkit-scrollbar-track { background: transparent; }
+  .session-list::-webkit-scrollbar-thumb { background: #475569; border-radius: 2px; }
+
+  .session-item {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 10px 8px; border-radius: 8px; cursor: pointer;
+    transition: background 0.15s; margin-bottom: 2px;
+  }
+  .session-item:hover { background: #334155; }
+  .session-item.active { background: #1e3a5f; border: 1px solid #2563eb; }
+  .session-info { flex: 1; min-width: 0; overflow: hidden; }
+  .session-title {
+    font-size: 0.85rem; color: #e2e8f0; white-space: nowrap;
+    overflow: hidden; text-overflow: ellipsis;
+  }
+  .session-date { font-size: 0.7rem; color: #64748b; margin-top: 2px; }
+  .session-actions { display: none; gap: 4px; flex-shrink: 0; margin-left: 6px; }
+  .session-item:hover .session-actions { display: flex; }
+  .session-actions button {
+    background: none; border: none; color: #94a3b8;
+    cursor: pointer; font-size: 0.85rem; padding: 2px 4px;
+    border-radius: 4px; transition: color 0.2s, background 0.2s;
+  }
+  .session-actions button:hover { color: #f1f5f9; background: #475569; }
+
+  /* ── 主聊天区 ── */
+  .chat-main {
+    flex: 1; display: flex; flex-direction: column;
+    min-width: 0; height: 100vh;
+  }
+
+  /* ── 页面头部 ── */
+  header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 12px 20px; background: #1e293b;
+    border-bottom: 1px solid #334155; flex-shrink: 0;
+  }
+  header .brand {
+    display: flex; align-items: center; gap: 8px;
+    font-weight: 600; font-size: 1rem; color: #f1f5f9;
+    text-decoration: none;
+  }
+  header .brand:hover { color: #facc15; }
+  header nav a {
+    color: #94a3b8; text-decoration: none;
+    font-size: 0.85rem; padding: 6px 12px;
+    border-radius: 6px; transition: background 0.2s, color 0.2s;
+  }
+  header nav a:hover { background: #334155; color: #e2e8f0; }
+  .hamburger-btn {
+    background: none; border: none; color: #e2e8f0;
+    font-size: 1.3rem; cursor: pointer; padding: 4px 8px;
+    border-radius: 6px; margin-right: 8px;
+    transition: background 0.2s;
+  }
+  .hamburger-btn:hover { background: #334155; }
+
+  /* ── 聊天区域 ── */
+  .chat-wrapper {
+    flex: 1; overflow-y: auto; padding: 20px;
+    display: flex; flex-direction: column; gap: 16px;
+  }
+  .message {
+    display: flex; gap: 10px; max-width: 80%;
+    animation: fadeIn 0.3s ease;
+  }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+  .message.user { align-self: flex-end; flex-direction: row-reverse; }
+  .message.assistant { align-self: flex-start; }
+  .message .avatar {
+    width: 34px; height: 34px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 1rem; flex-shrink: 0;
+  }
+  .message.user .avatar { background: #334155; }
+  .message.assistant .avatar { background: #1e3a5f; }
+  .message .bubble {
+    padding: 10px 16px; border-radius: 14px;
+    line-height: 1.6; font-size: 0.9rem; word-break: break-word;
+  }
+  .message.user .bubble {
+    background: #2563eb; color: #fff;
+    border-bottom-right-radius: 4px;
+  }
+  .message.assistant .bubble {
+    background: #1e293b; color: #e2e8f0;
+    border: 1px solid #334155; border-bottom-left-radius: 4px;
+  }
+
+  /* ── Markdown ── */
+  .message.assistant .bubble h1, .message.assistant .bubble h2,
+  .message.assistant .bubble h3, .message.assistant .bubble h4 {
+    color: #f1f5f9; margin: 12px 0 6px; line-height: 1.3;
+  }
+  .message.assistant .bubble h1 { font-size: 1.2rem; }
+  .message.assistant .bubble h2 { font-size: 1.08rem; }
+  .message.assistant .bubble h3 { font-size: 0.95rem; }
+  .message.assistant .bubble p { margin-bottom: 6px; }
+  .message.assistant .bubble p:last-child { margin-bottom: 0; }
+  .message.assistant .bubble ul, .message.assistant .bubble ol { margin: 6px 0; padding-left: 20px; }
+  .message.assistant .bubble li { margin-bottom: 3px; }
+  .message.assistant .bubble a { color: #60a5fa; text-decoration: underline; }
+  .message.assistant .bubble blockquote {
+    border-left: 3px solid #facc15; padding: 6px 12px;
+    margin: 8px 0; background: rgba(250, 204, 21, 0.08);
+    border-radius: 0 6px 6px 0; color: #cbd5e1;
+  }
+  .message.assistant .bubble code {
+    background: #334155; padding: 2px 6px; border-radius: 4px;
+    font-size: 0.85em; font-family: "SF Mono", "Fira Code", monospace;
+  }
+  .message.assistant .bubble pre {
+    background: #0f172a; padding: 12px; border-radius: 8px;
+    overflow-x: auto; margin: 8px 0; font-size: 0.82em;
+    border: 1px solid #334155; line-height: 1.45;
+  }
+  .message.assistant .bubble pre code { background: transparent; padding: 0; font-size: inherit; }
+  .message.assistant .bubble table {
+    width: 100%; border-collapse: collapse; margin: 8px 0; font-size: 0.85em;
+  }
+  .message.assistant .bubble th, .message.assistant .bubble td {
+    padding: 6px 10px; text-align: left; border: 1px solid #334155;
+  }
+  .message.assistant .bubble th { background: #1e293b; color: #94a3b8; font-weight: 500; }
+  .message.assistant .bubble strong { color: #f1f5f9; }
+  .message.assistant .bubble hr { border: none; border-top: 1px solid #334155; margin: 10px 0; }
+
+  /* ── 流式光标 ── */
+  .streaming .bubble::after { content: "▍"; animation: blink 0.8s infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+  .typing .bubble::after { content: "▍"; animation: blink 0.8s infinite; }
+
+  .empty-state {
+    flex: 1; display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    color: #64748b; text-align: center; gap: 12px;
+  }
+  .empty-state .icon { font-size: 3rem; }
+  .empty-state h3 { font-size: 1.1rem; color: #94a3b8; }
+  .empty-state p { font-size: 0.85rem; max-width: 360px; line-height: 1.6; }
+
+  /* ── 输入区域 ── */
+  .input-area {
+    padding: 14px 20px; background: #1e293b;
+    border-top: 1px solid #334155; display: flex;
+    gap: 10px; flex-shrink: 0;
+  }
+  .input-area input {
+    flex: 1; padding: 10px 16px; border-radius: 10px;
+    border: 1px solid #475569; background: #0f172a; color: #e2e8f0;
+    font-size: 0.9rem; outline: none; transition: border-color 0.2s;
+  }
+  .input-area input:focus { border-color: #2563eb; }
+  .input-area input::placeholder { color: #64748b; }
+  .input-area button {
+    padding: 10px 20px; border-radius: 10px; border: none;
+    background: #2563eb; color: #fff; font-size: 0.9rem;
+    font-weight: 500; cursor: pointer; transition: background 0.2s;
+  }
+  .input-area button:hover { background: #1d4ed8; }
+  .input-area button:disabled { background: #334155; color: #64748b; cursor: not-allowed; }
+
+  .error-msg { color: #f87171; font-size: 0.8rem; text-align: center; padding: 4px 20px; }
+
+  /* ── 移动端 ── */
+  @media (max-width: 768px) {
+    .sidebar {
+      position: fixed; left: 0; top: 0; z-index: 100; height: 100vh;
+    }
+    .sidebar.collapsed { margin-left: -260px; }
+    .sidebar-overlay {
+      position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+      background: rgba(0,0,0,0.5); z-index: 99;
+    }
+    .sidebar-overlay.show { display: block; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ═══════════ 登录叠加层 ═══════════ -->
+<div id="login-overlay" class="login-overlay">
+  <div class="login-card">
+    <h2>🔐 RAG 智能客服</h2>
+    <p>请输入密码以继续</p>
+    <input type="password" id="password-input" placeholder="输入密码" onkeydown="if(event.key==='Enter')handleLogin()">
+    <button onclick="handleLogin()">确认</button>
+    <div class="login-error" id="login-error"></div>
+  </div>
+</div>
+
+<div class="app-layout">
+  <!-- ═══════════ 移动端遮罩 ═══════════ -->
+  <div id="sidebar-overlay" class="sidebar-overlay" style="display:none" onclick="toggleSidebar()"></div>
+
+  <!-- ═══════════ 侧边栏 ═══════════ -->
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-header">
+      <h2>对话列表</h2>
+      <button onclick="toggleSidebar()" style="background:none;border:none;color:#94a3b8;cursor:pointer;font-size:1.1rem;">✕</button>
+    </div>
+    <button class="sidebar-new-btn" onclick="createNewSession()">🐤 新建对话</button>
+    <div class="session-list" id="session-list"></div>
+  </aside>
+
+  <!-- ═══════════ 主聊天区 ═══════════ -->
+  <div class="chat-main">
+    <header>
+      <div style="display:flex;align-items:center;">
+        <button class="hamburger-btn" onclick="toggleSidebar()">☰</button>
+        <a href="/" class="brand">🐤 yellowduck.top</a>
+      </div>
+      <nav>
+        <a href="/rag/upload.html">📁 知识库</a>
+        <a href="/">🏠 导航</a>
+      </nav>
+    </header>
+
+    <div class="chat-wrapper" id="chat-container">
+      <div class="empty-state" id="empty-state">
+        <div class="icon">📚</div>
+        <h3>RAG 智能客服</h3>
+        <p>基于知识库文档的智能问答助手。上传文档后，我可以帮你搜索文档内容、联网查最新信息、以及做数学计算。</p>
+      </div>
+    </div>
+
+    <div class="input-area">
+      <input type="text" id="user-input" placeholder="输入你的问题…" autofocus>
+      <button id="send-btn" onclick="sendMessage()">发送</button>
+    </div>
+
+    <div class="error-msg" id="error-msg"></div>
+  </div>
+</div>
+
+<!-- ═══════════ CDN ═══════════ -->
+<script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/marked@12.0.1/marked.min.js"></script>
+
+<script>
+/* ────────── DOM ────────── */
+var chatContainer = document.getElementById('chat-container');
+var userInput = document.getElementById('user-input');
+var sendBtn = document.getElementById('send-btn');
+var emptyState = document.getElementById('empty-state');
+var errorMsg = document.getElementById('error-msg');
+
+/* ────────── Auth ────────── */
+var AUTH_STORAGE_KEY = 'rag_auth_token';
+
+function getToken() { return localStorage.getItem(AUTH_STORAGE_KEY); }
+function setToken(t) { localStorage.setItem(AUTH_STORAGE_KEY, t); }
+function clearToken() { localStorage.removeItem(AUTH_STORAGE_KEY); }
+function checkAuth() { return !!getToken(); }
+
+async function handleLogin() {
+  var pw = document.getElementById('password-input').value.trim();
+  if (!pw) return;
+  setToken(pw);
+  try {
+    var resp = await fetch('/rag/api/chat/sessions', {
+      headers: { 'Authorization': 'Bearer ' + pw }
+    });
+    if (resp.ok) {
+      document.getElementById('login-overlay').style.display = 'none';
+      loadHistory();
+      refreshSessionList();
+    } else {
+      clearToken();
+      document.getElementById('login-error').textContent = '密码错误，请重试';
+    }
+  } catch(e) {
+    clearToken();
+    document.getElementById('login-error').textContent = '网络错误，请检查连接';
+  }
+}
+
+function showLoginOverlay() {
+  document.getElementById('login-overlay').style.display = 'flex';
+  document.getElementById('password-input').value = '';
+  document.getElementById('login-error').textContent = '';
+}
+
+/* ────────── 会话管理 ────────── */
+var activeSessionId = null;
+var sessionListCache = [];
+
+function getActiveSessionId() {
+  if (!activeSessionId) {
+    activeSessionId = localStorage.getItem('rag_active_session_id');
+    if (!activeSessionId) {
+      activeSessionId = 'rag_' + Math.random().toString(36).substring(2, 15) + Date.now().toString(36);
+      localStorage.setItem('rag_active_session_id', activeSessionId);
+    }
+  }
+  return activeSessionId;
+}
+
+function switchSession(newId) {
+  if (activeSessionId === newId) return;
+  activeSessionId = newId;
+  localStorage.setItem('rag_active_session_id', newId);
+  clearChatMessages();
+  loadHistory();
+  renderSessionList();
+}
+
+function createNewSession() {
+  var newId = 'rag_' + Math.random().toString(36).substring(2, 15) + Date.now().toString(36);
+  switchSession(newId);
+  refreshSessionList();
+}
+
+function clearChatMessages() {
+  var msgs = chatContainer.querySelectorAll('.message');
+  for (var i = 0; i < msgs.length; i++) { msgs[i].remove(); }
+  if (emptyState) emptyState.style.display = '';
+}
+
+/* ────────── 侧边栏 ────────── */
+function toggleSidebar() {
+  var sidebar = document.getElementById('sidebar');
+  var overlay = document.getElementById('sidebar-overlay');
+  sidebar.classList.toggle('collapsed');
+  if (overlay) {
+    overlay.style.display = sidebar.classList.contains('collapsed') ? 'none' : 'block';
+  }
+}
+
+async function refreshSessionList() {
+  if (!checkAuth()) return;
+  try {
+    var resp = await fetch('/rag/api/chat/sessions', {
+      headers: { 'Authorization': 'Bearer ' + getToken() }
+    });
+    if (!resp.ok) { if (resp.status === 401) { clearToken(); showLoginOverlay(); } return; }
+    sessionListCache = await resp.json();
+    renderSessionList();
+  } catch (err) { console.error('加载会话列表失败:', err); }
+}
+
+function renderSessionList() {
+  var container = document.getElementById('session-list');
+  if (!container) return;
+  var current = getActiveSessionId();
+  var html = '';
+  for (var i = 0; i < sessionListCache.length; i++) {
+    var s = sessionListCache[i];
+    var isActive = s.session_id === current;
+    html += '<div class="session-item' + (isActive ? ' active' : '') + '" onclick="switchSession(\'' + escapeAttr(s.session_id) + '\')">';
+    html += '<div class="session-info">';
+    html += '<div class="session-title">' + escapeHtml(s.title || '新对话') + '</div>';
+    html += '<div class="session-date">' + escapeHtml(formatDate(s.updated_at)) + '</div>';
+    html += '</div>';
+    html += '<div class="session-actions" onclick="event.stopPropagation()">';
+    html += '<button title="重命名" onclick="renameSession(\'' + escapeAttr(s.session_id) + '\',\'' + escapeAttr(s.title || '新对话') + '\')">✏️</button>';
+    html += '<button title="删除" onclick="deleteSession(\'' + escapeAttr(s.session_id) + '\')">🗑️</button>';
+    html += '</div></div>';
+  }
+  if (sessionListCache.length === 0) {
+    html = '<div style="padding:16px;text-align:center;color:#64748b;font-size:0.8rem;">暂无对话</div>';
+  }
+  container.innerHTML = html;
+}
+
+function escapeAttr(str) { return String(str).replace(/'/g, "\\'").replace(/"/g, '&quot;'); }
+
+function formatDate(isoStr) {
+  if (!isoStr) return '';
+  try {
+    var d = new Date(isoStr);
+    var now = new Date();
+    var diff = now - d;
+    if (diff < 60000) return '刚刚';
+    if (diff < 3600000) return Math.floor(diff / 60000) + '分钟前';
+    if (diff < 86400000) return Math.floor(diff / 3600000) + '小时前';
+    return (d.getMonth() + 1) + '/' + d.getDate();
+  } catch(e) { return ''; }
+}
+
+async function renameSession(sessionId, oldTitle) {
+  var newTitle = prompt('重命名会话:', oldTitle);
+  if (!newTitle || newTitle.trim() === '' || newTitle.trim() === oldTitle) return;
+  try {
+    var resp = await fetch('/rag/api/chat/sessions/' + encodeURIComponent(sessionId), {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + getToken() },
+      body: JSON.stringify({ title: newTitle.trim() })
+    });
+    if (!resp.ok) throw new Error('重命名失败');
+    refreshSessionList();
+  } catch (err) { showError('重命名失败: ' + err.message); }
+}
+
+async function deleteSession(sessionId) {
+  if (!confirm('确定删除此对话？')) return;
+  try {
+    var resp = await fetch('/rag/api/chat/sessions/' + encodeURIComponent(sessionId), {
+      method: 'DELETE', headers: { 'Authorization': 'Bearer ' + getToken() }
+    });
+    if (!resp.ok) throw new Error('删除失败');
+    sessionListCache = sessionListCache.filter(function(s) { return s.session_id !== sessionId; });
+    if (sessionId === getActiveSessionId()) {
+      if (sessionListCache.length > 0) { switchSession(sessionListCache[0].session_id); }
+      else { createNewSession(); }
+    }
+    refreshSessionList();
+  } catch (err) { showError('删除失败: ' + err.message); }
+}
+
+/* ────────── 工具函数 ────────── */
+function showError(msg) {
+  errorMsg.textContent = msg;
+  if (msg) setTimeout(function() { errorMsg.textContent = ''; }, 5000);
+}
+function escapeHtml(str) {
+  if (!str) return '';
+  return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+function renderMarkdown(text) { return DOMPurify.sanitize(marked.parse(text)); }
+
+/* ────────── 消息展示 ────────── */
+function addMessageEl(role, contentHtml, extraClass) {
+  if (emptyState) emptyState.style.display = 'none';
+  var div = document.createElement('div');
+  div.className = 'message ' + role + (extraClass ? ' ' + extraClass : '');
+  var avatar = document.createElement('div');
+  avatar.className = 'avatar';
+  avatar.textContent = role === 'user' ? '👤' : '🤖';
+  var bubble = document.createElement('div');
+  bubble.className = 'bubble';
+  bubble.innerHTML = contentHtml;
+  div.appendChild(avatar); div.appendChild(bubble);
+  chatContainer.appendChild(div);
+  chatContainer.scrollTop = chatContainer.scrollHeight;
+  return div;
+}
+function addUserMessage(text) { return addMessageEl('user', escapeHtml(text).replace(/\n/g, '<br>')); }
+function addAssistantMessage(md) { return addMessageEl('assistant', renderMarkdown(md)); }
+function removeTempMessages() {
+  var temps = document.querySelectorAll('.typing,.streaming');
+  for (var i = 0; i < temps.length; i++) { temps[i].remove(); }
+  var msgs = document.querySelectorAll('.message:not(.typing):not(.streaming)');
+  if (msgs.length === 0 && emptyState) { emptyState.style.display = ''; }
+}
+
+/* ────────── 历史加载 ────────── */
+async function loadHistory() {
+  if (!checkAuth()) return;
+  try {
+    var resp = await fetch('/rag/api/chat/history?session_id=' + encodeURIComponent(getActiveSessionId()), {
+      headers: { 'Authorization': 'Bearer ' + getToken() }
+    });
+    if (!resp.ok) { if (resp.status === 401) { clearToken(); showLoginOverlay(); } return; }
+    var data = await resp.json();
+    if (data.messages && data.messages.length > 0) {
+      if (emptyState) emptyState.style.display = 'none';
+      for (var i = 0; i < data.messages.length; i++) {
+        var msg = data.messages[i];
+        if (msg.role === 'user') { addUserMessage(msg.content); }
+        else { addAssistantMessage(msg.content); }
+      }
+    }
+  } catch (err) { console.error('加载历史失败:', err); }
+}
+
+/* ────────── 发送消息（流式）────────── */
+async function sendMessage() {
+  var message = userInput.value.trim();
+  if (!message) return;
+  if (!checkAuth()) { showLoginOverlay(); return; }
+
+  showError('');
+  userInput.value = '';
+  sendBtn.disabled = true; userInput.disabled = true;
+
+  addUserMessage(message);
+  var tempDiv = addMessageEl('assistant', '思考中…', 'typing');
+
+  try {
+    var resp = await fetch('/rag/api/chat/stream', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + getToken() },
+      body: JSON.stringify({ message: message, session_id: getActiveSessionId() })
+    });
+    if (!resp.ok) {
+      if (resp.status === 401) { clearToken(); showLoginOverlay(); removeTempMessages(); return; }
+      throw new Error('HTTP ' + resp.status);
+    }
+
+    tempDiv.classList.remove('typing'); tempDiv.classList.add('streaming');
+    var reader = resp.body.getReader();
+    var decoder = new TextDecoder();
+    var content = '', buffer = '';
+
+    while (true) {
+      var result = await reader.read();
+      if (result.done) break;
+      buffer += decoder.decode(result.value, { stream: true });
+      var lines = buffer.split('\n'); buffer = lines.pop() || '';
+      for (var j = 0; j < lines.length; j++) {
+        var line = lines[j];
+        if (line.startsWith('data: ')) {
+          try {
+            var d = JSON.parse(line.slice(6));
+            if (d.error) throw new Error(d.error);
+            if (d.done) break;
+            if (d.token) {
+              content += d.token;
+              var b = tempDiv.querySelector('.bubble');
+              if (b) b.textContent = content;
+              chatContainer.scrollTop = chatContainer.scrollHeight;
+            }
+          } catch (e) { if (e.message && !e.message.startsWith('Unexpected')) throw e; }
+        }
+      }
+    }
+
+    tempDiv.classList.remove('streaming');
+    var fb = tempDiv.querySelector('.bubble');
+    if (fb) fb.innerHTML = renderMarkdown(content);
+    chatContainer.scrollTop = chatContainer.scrollHeight;
+
+    // 刷新会话列表（标题可能已自动生成）
+    refreshSessionList();
+
+  } catch (err) {
+    removeTempMessages();
+    showError('请求失败：' + err.message);
+    addMessageEl('assistant', renderMarkdown('⚠️ 抱歉，请求失败了。请稍后重试。\n\n错误：' + escapeHtml(err.message)));
+  } finally {
+    sendBtn.disabled = false; userInput.disabled = false; userInput.focus();
+  }
+}
+
+/* ────────── 初始化 ────────── */
+userInput.addEventListener('keydown', function(e) {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+});
+
+(function init() {
+  if (checkAuth()) {
+    document.getElementById('login-overlay').style.display = 'none';
+    getActiveSessionId();
+    loadHistory();
+    refreshSessionList();
+  } else {
+    showLoginOverlay();
+  }
+})();
+</script>
+
+</body>
+</html>
