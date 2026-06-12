@@ -1,3 +1,5 @@
+import os
+
 md5_path = "./data/md5.text"
 
 # Chroma
@@ -46,4 +48,4 @@ pytesseract_language = "chi_sim+eng"     # pytesseract lang 参数
 ocr_confidence_threshold = 0.5           # PaddleOCR 置信度阈值，低于该值的结果将被丢弃
 
 # Auth
-auth_token = "guest"
+auth_token = os.environ.get("AUTH_TOKEN", "guest")
