@@ -12,7 +12,7 @@
 - **Agent 框架**: LangChain（`bind_tools` + 自定义 Agent 循环）
 - **向量数据库**: Chroma（本地持久化）
 - **嵌入模型**: DashScopeEmbeddings（`text-embedding-v4`，阿里云）
-- **对话模型**: ChatTongyi（`qwen3-max`，阿里云通义）
+- **对话模型**: ChatTongyi（`qwen3-max`，阿里云通义），必须传 `streaming=True` 否则 `stream()` 降级为非流式
 - **UI（开发）**: Streamlit（两个独立应用）
 - **UI（生产）**: 静态 HTML/CSS/JS（nginx serving），marked.js Markdown 渲染，SSE 流式消费
 - **API**: FastAPI
@@ -25,21 +25,21 @@
 
 | 文件 / 目录 | 用途 |
 |------|------|
-| `rag_agent.py` | **核心 Agent** — 自定义 Function Calling 循环，3 个工具（知识库搜索 / 联网搜索 / 计算器），对话历史管理；`stream()` 方法实现真实 SSE 流式生成 |
+| `rag_agent.py` | **核心 Agent** — 自定义 Function Calling 循环，3 个工具（知识库搜索 / 联网搜索 / 计算器），对话历史管理；`stream()` 方法实现 SSE 流式生成；`_generate_title()` LLM 自动标题 |
 | `knowledge_base.py` | 知识库服务 — 文本分割、MD5 去重、嵌入向量化 + 存入 Chroma，支持多格式文档 |
 | `file_parser.py` | 多格式文档解析器 — TXT / MD / PDF（PyMuPDF）/ DOCX（python-docx）/ 图片 OCR（PaddleOCR，可切换 pytesseract） |
 | `vector_stores.py` | Chroma 薄封装，提供 `get_retriever()` 和 `get_retriever_with_score()`（带相似度阈值检索） |
 | `config_data.py` | 所有配置常量（模型名称、分块参数、Agent 配置、API 配置、OCR 后端、auth_token） |
-| `file_history_store.py` | `FileChatMessageHistory`（LangChain 兼容）+ `SessionsMetadata`（会话元数据注册表） |
+| `file_history_store.py` | `FileChatMessageHistory`（LangChain 兼容）+ `SessionsMetadata`（会话元数据注册表，UTC 时区感知时间戳） |
 | `evaluation.py` | RAG 评估体系 — Hit Rate、MRR、检索延迟 |
 | `ui/` | Streamlit 界面 — `app_qa.py`（问答，支持 Direct/API 双模式）、`app_file_uploader.py`（知识库管理） |
-| `api/` | FastAPI 后端 — `server.py`（入口 + Auth 中间件）、`chat.py`（非流式/流式/历史端点）、`knowledge_base.py`（上传/列表/删除） |
-| `tests/` | 测试脚本 — `test_modules.py`（模块级，含 .md 解析测试）、`test_knowledge_base.py`（知识库 CRUD）、`test_api.py`（API 端到端），`data/`（测试用文档含 test_markdown.md） |
+| `api/` | FastAPI 后端 — `server.py`（入口 + Auth 中间件）、`chat.py`（非流式/流式/历史/会话管理端点）、`knowledge_base.py`（上传/列表/删除） |
+| `tests/` | 测试脚本 — `test_modules.py`（模块级，含 .md 解析 + 会话元数据测试）、`test_knowledge_base.py`（知识库 CRUD）、`test_api.py`（API 端到端），`data/`（测试用文档含 test_markdown.md） |
 | `docker/` | Docker 配置 — `Dockerfile`（apt 阿里云镜像 + build-essential）+ `docker-compose.yml`（127.0.0.1:8000 + 1GB 内存限制） |
 | `/var/www/yellowduck/rag/` | 生产环境静态前端 — `index.html`（聊天界面）、`upload.html`（知识库管理），由 nginx 直接 serving |
 | `/etc/nginx/sites-available/yellowduck` | nginx 反代配置 — `/rag/api/` → Docker、`/rag/` → 静态文件 |
 | `/etc/systemd/system/rag-agent.service` | systemd 服务 — 管理 Docker 容器生命周期 |
-| `data/` | 运行时数据 — `chroma_db/`（向量库）、`chat_history/`（聊天记录）、`md5.text`（MD5 去重） |
+| `data/` | 运行时数据 — `chroma_db/`（向量库）、`chat_history/`（聊天记录 + `sessions_metadata.json` 会话注册表）、`md5.text`（MD5 去重） |
 | `requirements.txt` | Python 依赖清单 |
 | `TESTING.md` | 7 层验证体系指南（从模块级到 Docker 全量测试） |
 | `pytest.ini` | Pytest 配置（`addopts = -v --tb=short`，定义 `external` 标记） |
@@ -48,7 +48,9 @@
 
 1. **知识库导入**：`ui/app_file_uploader.py` → `file_parser.py`（多格式解析）→ `knowledge_base.py`（文本分割、MD5 去重、嵌入 + 存入 Chroma）
 
-2. **对话问答**：`ui/app_qa.py` 支持两种运行模式（`USE_API` 开关）：
+2. **会话管理**：前端自动创建 session_id → 首次对话后 LLM 生成标题 → `SessionsMetadata` 注册 → 侧边栏显示列表，支持重命名/删除/切换
+
+3. **对话问答**：`ui/app_qa.py` 支持两种运行模式（`USE_API` 开关）：
    - **Direct Mode**（默认，`USE_API = False`）：直接 import `RagAgentService`，本地调用
    - **API Mode**（`USE_API = True`）：通过 `requests` 调用 FastAPI 后端（需先启动 API 服务）
    
@@ -73,6 +75,9 @@
 | `POST` | `/api/chat` | 发送消息，返回 Agent 回复（非流式） |
 | `POST` | `/api/chat/stream` | 发送消息（SSE 流式，`text/event-stream`） |
 | `GET` | `/api/chat/history?session_id=` | 获取会话聊天历史 |
+| `GET` | `/api/chat/sessions` | 列出所有会话（按更新时间倒序） |
+| `PUT` | `/api/chat/sessions/{session_id}` | 重命名会话 |
+| `DELETE` | `/api/chat/sessions/{session_id}` | 删除会话（消息文件 + 元数据） |
 | `POST` | `/api/knowledge-base/upload` | 上传文档到知识库 |
 | `GET` | `/api/knowledge-base/documents` | 列出知识库所有文档 |
 | `DELETE` | `/api/knowledge-base/documents/{source}` | 删除指定来源的文档 |

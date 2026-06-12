@@ -12,7 +12,7 @@ from langchain_core.messages import (
 from langchain_core.tools import tool
 
 import config_data as config
-from file_history_store import get_history
+from file_history_store import get_history, touch_session_metadata
 from vector_stores import VectorStoreService
 
 logger = logging.getLogger(__name__)
@@ -26,6 +26,7 @@ class RagAgentService:
         self.chat_model = ChatTongyi(
             model=config.chat_model_name,
             temperature=0,
+            streaming=True,
         )
         self.tools = self._create_tools()
         self.tool_map = {t.name: t for t in self.tools}
@@ -232,6 +233,34 @@ class RagAgentService:
         messages.append(fallback_msg)
         return self.chat_model.invoke(messages)
 
+    def _generate_title(self, first_message: str) -> str:
+        """用 LLM 生成简短会话标题（≤20 字），失败时降级为截断"""
+        prompt = (
+            "根据以下对话的第一条用户消息，生成一个简短的中文标题"
+            "（不超过20个字），直接返回标题，不要加引号或解释。\n"
+            f"消息：{first_message}"
+        )
+        try:
+            resp = self.chat_model.invoke(prompt)
+            title = resp.content.strip()
+            if len(title) > 20:
+                title = title[:20] + "…"
+            return title
+        except Exception:
+            title = first_message.strip()
+            return title[:40] + "…" if len(title) > 40 else title
+
+    def _maybe_auto_title(self, session_id: str, first_message: str, history):
+        """如果会话刚创建（metadata 中不存在或 title 为 '新对话'），用 LLM 生成标题"""
+        from file_history_store import get_metadata_store
+        store = get_metadata_store()
+        meta = store.get_session(session_id)
+        if meta is None or meta.get("title") == "新对话":
+            title = self._generate_title(first_message)
+            touch_session_metadata(session_id, title=title)
+        else:
+            touch_session_metadata(session_id)
+
     def invoke(self, message: str, session_id: str = "user_001") -> str:
         """处理用户消息并返回 Agent 回答"""
         history = get_history(session_id)
@@ -246,6 +275,9 @@ class RagAgentService:
         final_response = self._execute_agent_loop(messages)
 
         history.add_messages([user_message, final_response])
+
+        # 会话元数据：首次消息时 LLM 生成标题
+        self._maybe_auto_title(session_id, message, history)
 
         return final_response.content
 
@@ -315,6 +347,9 @@ class RagAgentService:
         # Phase 3: 保存完整对话到历史
         final_response = AIMessage(content=collected)
         history.add_messages([user_message, final_response])
+
+        # 会话元数据：首次消息时 LLM 生成标题
+        self._maybe_auto_title(session_id, message, history)
 
 
 if __name__ == '__main__':

@@ -29,6 +29,7 @@
 - **流式打字机效果** — SSE 实时流式输出，token 逐字渲染
 - **Markdown 渲染** — 表格、代码块、列表等格式正确展示
 - **多轮对话记忆** — 基于 JSON 文件的 `BaseChatMessageHistory`，刷新页面后自动加载历史
+- **会话管理** — 侧边栏对话列表，支持新建/切换/重命名/删除，LLM 自动生成标题
 - **用户认证** — Bearer Token 单密码保护（API + 前端）
 - **RESTful API** — FastAPI 提供聊天、流式、历史、知识库接口
 - **Docker 部署** — 源码卷挂载 + uvicorn `--reload` 热重载，代码改动秒级生效
@@ -94,7 +95,7 @@ RAG/
 │   └── data/              # 测试文档（.txt/.pdf/.docx/.png/.md）
 ├── data/                  # 运行时数据（git ignored）
 │   ├── chroma_db/         # 向量数据库
-│   ├── chat_history/      # 聊天记录（JSON 文件）
+│   ├── chat_history/      # 聊天记录 + sessions_metadata.json
 │   └── md5.text           # MD5 去重记录
 ├── rag_agent.py           # Agent 核心（Function Calling 循环 + 流式生成）
 ├── knowledge_base.py      # 知识库服务（分割 / 嵌入 / 去重）
@@ -115,6 +116,9 @@ RAG/
 | `POST` | `/api/chat` | 发送消息（非流式） |
 | `POST` | `/api/chat/stream` | 发送消息（SSE 流式） |
 | `GET` | `/api/chat/history?session_id=` | 获取会话聊天历史 |
+| `GET` | `/api/chat/sessions` | 列出所有会话 |
+| `PUT` | `/api/chat/sessions/{session_id}` | 重命名会话 |
+| `DELETE` | `/api/chat/sessions/{session_id}` | 删除会话 |
 | `POST` | `/api/knowledge-base/upload` | 上传文档到知识库 |
 | `GET` | `/api/knowledge-base/documents` | 列出知识库所有文档 |
 | `DELETE` | `/api/knowledge-base/documents/{source}` | 删除指定来源的文档 |
