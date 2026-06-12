@@ -36,8 +36,8 @@
 | `api/` | FastAPI 后端 — `server.py`（入口 + Auth 中间件）、`chat.py`（非流式/流式/历史/会话管理端点）、`knowledge_base.py`（上传/列表/删除） |
 | `tests/` | 测试脚本 — `test_modules.py`（模块级，含 .md 解析 + 会话元数据测试）、`test_knowledge_base.py`（知识库 CRUD）、`test_api.py`（API 端到端），`data/`（测试用文档含 test_markdown.md） |
 | `docker/` | Docker 配置 — `Dockerfile`（apt 阿里云镜像 + build-essential）+ `docker-compose.yml`（127.0.0.1:8000 + 1GB 内存限制） |
-| `/var/www/<project>/rag/` | 生产环境静态前端 — `index.html`（聊天界面）、`upload.html`（知识库管理），由 nginx 直接 serving |
-| `/etc/nginx/sites-available/&lt;project&gt;` | nginx 反代配置 — `/rag/api/` → Docker、`/rag/` → 静态文件 |
+| `web/` | 生产环境静态前端 — `index.html`（聊天界面）、`upload.html`（知识库管理），部署时复制到 nginx serving 目录 |
+| `/etc/nginx/sites-available/<project>` | nginx 反代配置 — `/rag/api/` → Docker、`/rag/` → `web/` 静态文件 |
 | `/etc/systemd/system/rag-agent.service` | systemd 服务 — 管理 Docker 容器生命周期 |
 | `data/` | 运行时数据 — `chroma_db/`（向量库）、`chat_history/`（聊天记录 + `sessions_metadata.json` 会话注册表）、`md5.text`（MD5 去重） |
 | `requirements.txt` | Python 依赖清单 |
@@ -156,7 +156,7 @@ python -m pytest tests/test_api.py -v
 ### 架构
 
 ```
-https://<your-domain.com>/rag/               → /var/www/<project>/rag/ (静态 HTML/JS)
+https://<your-domain.com>/rag/               → web/ 静态文件 (nginx serving HTML/JS)
 https://<your-domain.com>/rag/api/chat/stream→ nginx proxy_buffering off → 127.0.0.1:8000 (SSE)
 https://<your-domain.com>/rag/api/*          → nginx rewrite → 127.0.0.1:8000 (FastAPI Docker)
 ```
