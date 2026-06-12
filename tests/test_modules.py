@@ -122,3 +122,37 @@ def test_image_parse():
     except Exception as e:
         # pytesseract 可能缺少系统级 tesseract 二进制
         print(f"pytesseract 后端跳过: {e}")
+
+
+def test_sessions_metadata():
+    """1.7 会话元数据 CRUD"""
+    import tempfile
+    from file_history_store import SessionsMetadata
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        store = SessionsMetadata(tmpdir)
+
+        # Create
+        store.create_session("test_s1")
+        assert store.session_exists("test_s1")
+
+        # Read
+        info = store.get_session("test_s1")
+        assert info["title"] == "新对话"
+        assert "created_at" in info
+
+        # Update
+        store.update_session("test_s1", title="My Chat")
+        info = store.get_session("test_s1")
+        assert info["title"] == "My Chat"
+
+        # List (sorted by updated_at desc)
+        store.create_session("test_s2")
+        sessions = store.list_sessions()
+        assert len(sessions) == 2
+        assert sessions[0]["session_id"] == "test_s2"  # newer first
+
+        # Delete
+        store.delete_session("test_s1")
+        assert not store.session_exists("test_s1")
+        assert len(store.list_sessions()) == 1
