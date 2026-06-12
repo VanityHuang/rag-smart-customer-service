@@ -250,10 +250,71 @@ class RagAgentService:
         return final_response.content
 
     def stream(self, message: str, session_id: str = "user_001"):
-        """流式接口 — 完整执行 Agent 循环后逐字输出最终结果"""
-        final_text = self.invoke(message, session_id)
-        for char in final_text:
-            yield char
+        """真正的流式接口 — Agent 循环处理工具调用后，流式输出最终答案
+
+        两阶段设计：
+        1. Agent 循环（同步）：用 model_with_tools.invoke 检测 tool_calls
+        2. 流式输出（异步）：用 chat_model.stream 逐 token 生成最终答案
+        """
+        history = get_history(session_id)
+        user_message = HumanMessage(content=message)
+
+        messages = [
+            SystemMessage(content=config.AGENT_SYSTEM_PROMPT),
+            *history.messages,
+            user_message,
+        ]
+
+        # Phase 1: Agent 循环 — 同步处理工具调用
+        max_iter = config.agent_max_iterations
+
+        for iteration in range(max_iter):
+            if config.agent_verbose:
+                logger.debug(f"Agent iteration {iteration + 1}/{max_iter}")
+
+            response = self.model_with_tools.invoke(messages)
+
+            if not response.tool_calls:
+                # 最终回答 — 跳出循环，进入流式阶段（不追加到 messages，
+                # 让 stream 调用重新生成，避免浪费一次 invoke 的 content）
+                break
+
+            # 有工具调用：追加响应和工具结果，继续循环
+            messages.append(response)
+
+            for tc in response.tool_calls:
+                tool_name = tc["name"]
+                tool_args = tc["args"]
+                tool_id = tc["id"]
+
+                if config.agent_verbose:
+                    logger.info(f"  调用工具: {tool_name}({tool_args})")
+
+                if tool_name not in self.tool_map:
+                    result = f"未知工具: {tool_name}"
+                else:
+                    try:
+                        result = self.tool_map[tool_name].invoke(tool_args)
+                    except Exception as e:
+                        result = f"工具执行错误 ({tool_name}): {str(e)}"
+
+                messages.append(ToolMessage(content=str(result), tool_call_id=tool_id))
+        else:
+            # 达到最大迭代次数，追加 fallback 提示
+            messages.append(SystemMessage(
+                content="你已经达到了最大工具调用次数。请基于已获得的信息给出最终回答。"
+            ))
+
+        # Phase 2: 流式输出最终答案（不带工具的模型，纯文本流式生成）
+        collected = ""
+        for chunk in self.chat_model.stream(messages):
+            if hasattr(chunk, 'content') and chunk.content:
+                collected += chunk.content
+                yield chunk.content
+
+        # Phase 3: 保存完整对话到历史
+        final_response = AIMessage(content=collected)
+        history.add_messages([user_message, final_response])
 
 
 if __name__ == '__main__':

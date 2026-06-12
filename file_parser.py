@@ -1,6 +1,6 @@
 """
 多格式文档解析器
-支持格式: .txt, .pdf, .docx, .png, .jpg, .jpeg, .bmp, .tiff
+支持格式: .txt, .md, .pdf, .docx, .png, .jpg, .jpeg, .bmp, .tiff
 """
 import os
 import tempfile
@@ -27,6 +27,7 @@ def parse_bytes(file_bytes: bytes, filename: str) -> str:
 def _dispatch(ext: str, path: str) -> str:
     parsers = {
         '.txt': _parse_txt,
+        '.md': _parse_txt,
         '.pdf': _parse_pdf,
         '.docx': _parse_docx,
         '.png': _parse_image,

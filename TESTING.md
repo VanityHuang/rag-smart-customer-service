@@ -20,13 +20,14 @@ echo $DASHSCOPE_API_KEY
 
 | 层级 | 命令 | 测试内容 | 需 API Key |
 |------|------|----------|:----------:|
-| ① 模块级 | `python -m pytest tests/test_modules.py -v` | 导入 + 文件解析 | 否 |
+| ① 模块级 | `python -m pytest tests/test_modules.py -v` | 导入 + 文件解析（含 .md） | 否 |
 | ② Agent 对话 | `python rag_agent.py` | 命令行聊天互动 | 是 |
 | ③ 知识库 CRUD | `python -m pytest tests/test_knowledge_base.py -v` | 上传/列表/删除 | 是 |
 | ④ API 接口 | `python -m pytest tests/test_api.py -v` | 自动启停 + 测接口 | 是 |
 | ⑤ Streamlit UI | `streamlit run ui/app_qa.py` | 问答界面（手动操作） | 是 |
 | ⑥ Docker | `cd docker && docker-compose up --build` | 容器化全量测试 | 是 |
 | ⑦ RAG 评估 | `python evaluation.py` | 命中率/延迟指标 | 是 |
+| ⑧ 生产验证 | 见下方 curl 命令 | yellowduck.top 线上 API + 前端 | 是 |
 
 ---
 
@@ -40,13 +41,16 @@ python -m pytest tests/test_modules.py -v
 
 ```bash
 python -m pytest tests/test_modules.py -v -k "txt"
-python tests/test_modules.py pdf docx
+python -m pytest tests/test_modules.py -v -k "md"
+python -m pytest tests/test_modules.py -v -k "pdf"
 ```
 
 测试项：
 - 所有模块能否正常导入
 - TXT 解析（自动创建临时文件，测完删除）
+- MD（Markdown）解析
 - PDF / DOCX 解析（需在 `tests/data/` 下有对应文件）
+- 图片 OCR 解析（需 `tests/data/test_ocr.png`）
 
 ---
 
@@ -87,11 +91,9 @@ python -m pytest tests/test_knowledge_base.py -v
 python -m pytest tests/test_api.py -v
 ```
 
-> 端口 8000 被占用？修改 `tests/test_api.py` 中的 `BASE_URL` 和 port。**注意**：此测试需要 Docker Desktop 运行中（服务实际部署在容器中时），或确保端口 8000 上的 API 服务可达。
+> **注意**：API 测试需要带 `Authorization: Bearer <token>` 请求头，默认 token 为 `guest`。端口 8000 被占用？修改 `tests/test_api.py` 中的 `BASE_URL` 和 port。
 
 自动完成：启动服务器 → 测聊天接口 → 测上传 → 测列表 → 关闭服务器
-
-> 端口 8000 被占用？修改 `tests/test_api.py` 顶部的 `BASE_URL` 和 port。
 
 ---
 
@@ -106,7 +108,7 @@ streamlit run ui/app_file_uploader.py --server.port 8502
 ```
 
 测试流程：
-1. 知识库管理界面上传文件
+1. 知识库管理界面上传文件（含 .md 文件）
 2. 问答界面提问文件内容
 3. 提问 `25*4+100 等于多少` → 应调计算器
 4. 提问 `今天有什么新闻` → 应联网搜索
@@ -122,9 +124,17 @@ cd docker && docker-compose up --build
 新开终端测试：
 
 ```bash
+# 需带 Auth header
 curl -X POST http://localhost:8000/api/chat \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer guest" \
   -d '{"message": "你好"}'
+
+# SSE 流式测试
+curl -N -X POST http://localhost:8000/api/chat/stream \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer guest" \
+  -d '{"message": "1+1=?"}'
 ```
 
 ---
@@ -150,17 +160,17 @@ python evaluation.py
 ├── ui/                        # Streamlit 界面
 ├── api/                       # FastAPI 后端
 ├── tests/                     # 测试脚本
-│   └── data/                  # 测试用文档
+│   └── data/                  # 测试用文档（.txt/.md/.pdf/.docx/.png）
 ├── docker/                    # Docker 配置
 ├── data/                      # 运行时数据
 │   ├── chroma_db/             # 向量数据库
-│   ├── chat_history/          # 聊天记录
+│   ├── chat_history/          # 聊天记录 + sessions_metadata.json
 │   └── md5.text               # MD5 去重记录
-├── config_data.py             # 配置
-├── file_parser.py             # 文档解析
-├── file_history_store.py      # 聊天历史存储
+├── config_data.py             # 配置（含 auth_token）
+├── file_parser.py             # 文档解析（支持 TXT/MD/PDF/DOCX/图片）
+├── file_history_store.py      # 聊天历史存储（文件 + 会话元数据）
 ├── knowledge_base.py          # 知识库服务
-├── rag_agent.py               # Agent 核心
+├── rag_agent.py               # Agent 核心（Function Calling + SSE 流式）
 ├── vector_stores.py           # 向量检索
 ├── evaluation.py              # RAG 评估
 └── requirements.txt           # 依赖
@@ -170,21 +180,37 @@ python evaluation.py
 
 ## 第 ⑧ 层：生产环境验证（yellowduck.top/rag）
 
-以下命令在服务器上执行，验证 Docker 部署后的 API 和前端：
+以下命令在服务器上执行，验证 Docker 部署后的 API 和前端。**所有 API 请求需带 `Authorization: Bearer guest`。**
 
 ```bash
-# API 聊天测试
+AUTH="Authorization: Bearer guest"
+
+# API 聊天测试（非流式）
 curl -X POST https://yellowduck.top/rag/api/chat \
   -H "Content-Type: application/json" \
+  -H "$AUTH" \
   -d '{"message": "你好", "session_id": "test_verify"}'
 
-# 知识库列表
-curl https://yellowduck.top/rag/api/knowledge-base/documents
+# API 聊天测试（SSE 流式）
+curl -N -X POST https://yellowduck.top/rag/api/chat/stream \
+  -H "Content-Type: application/json" \
+  -H "$AUTH" \
+  -d '{"message": "1+1=?", "session_id": "test_verify"}'
 
-# 知识库上传
-echo "测试内容" > /tmp/test_rag.txt
+# 获取聊天历史
+curl -H "$AUTH" "https://yellowduck.top/rag/api/chat/history?session_id=test_verify"
+
+# 知识库列表
+curl -H "$AUTH" https://yellowduck.top/rag/api/knowledge-base/documents
+
+# 知识库上传（含 .md 文件支持）
+echo "# 测试标题\n\n测试内容" > /tmp/test_rag.md
 curl -X POST https://yellowduck.top/rag/api/knowledge-base/upload \
-  -F "file=@/tmp/test_rag.txt"
+  -H "$AUTH" \
+  -F "file=@/tmp/test_rag.md"
+
+# Auth 验证（无 token 应返回 401）
+curl -o /dev/null -w "HTTP %{http_code}" https://yellowduck.top/rag/api/chat/history?session_id=test
 
 # 前端页面可达
 curl -o /dev/null -w "HTTP %{http_code}" https://yellowduck.top/rag/
@@ -208,3 +234,6 @@ sudo docker compose -f /home/admin/my_projects/RAG/docker/docker-compose.yml ps
 | 知识库为空 | 数据目录未挂载 | 检查 `data/chroma_db/` 是否在 compose volumes 中 |
 | PaddleOCR segfault | 内存不足 | 容器仅 1GB，大图 OCR 可能 OOM；改 `pytesseract` 后端 |
 | Docker 构建 OOM | 构建时内存不够 | `docker compose build --memory=1g` |
+| API 返回 401 | 缺少或错误的 Auth token | 添加 `Authorization: Bearer guest` 请求头 |
+| SSE 流式被缓冲 | nginx 未配置 `proxy_buffering off` | 检查 nginx 是否有 `/rag/api/chat/stream` location |
+| Docker 构建很慢 | pip 缓存被清理 | 不要运行 `docker builder prune`；pip 层永久缓存 |

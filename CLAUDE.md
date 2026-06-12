@@ -13,25 +13,28 @@
 - **向量数据库**: Chroma（本地持久化）
 - **嵌入模型**: DashScopeEmbeddings（`text-embedding-v4`，阿里云）
 - **对话模型**: ChatTongyi（`qwen3-max`，阿里云通义）
-- **UI**: Streamlit（两个独立应用）
+- **UI（开发）**: Streamlit（两个独立应用）
+- **UI（生产）**: 静态 HTML/CSS/JS（nginx serving），marked.js Markdown 渲染，SSE 流式消费
 - **API**: FastAPI
-- **聊天历史**: 基于 JSON 文件存储
-- **容器化**: Docker + docker-compose（Dockerfile 使用 `python:3.11-slim`）
+- **流式响应**: SSE（Server-Sent Events），nginx `proxy_buffering off`
+- **认证**: Bearer Token 单密码保护（`guest`）
+- **聊天历史**: 基于 JSON 文件存储 + `sessions_metadata.json` 会话元数据
+- **容器化**: Docker + docker-compose（Dockerfile 使用 `python:3.11-slim`，源码卷挂载 + `--reload` 热重载）
 
 ## 项目结构
 
 | 文件 / 目录 | 用途 |
 |------|------|
-| `rag_agent.py` | **核心 Agent** — 自定义 Function Calling 循环，3 个工具（知识库搜索 / 联网搜索 / 计算器），对话历史管理 |
+| `rag_agent.py` | **核心 Agent** — 自定义 Function Calling 循环，3 个工具（知识库搜索 / 联网搜索 / 计算器），对话历史管理；`stream()` 方法实现真实 SSE 流式生成 |
 | `knowledge_base.py` | 知识库服务 — 文本分割、MD5 去重、嵌入向量化 + 存入 Chroma，支持多格式文档 |
-| `file_parser.py` | 多格式文档解析器 — TXT / PDF（PyMuPDF）/ DOCX（python-docx）/ 图片 OCR（PaddleOCR，可切换 pytesseract） |
+| `file_parser.py` | 多格式文档解析器 — TXT / MD / PDF（PyMuPDF）/ DOCX（python-docx）/ 图片 OCR（PaddleOCR，可切换 pytesseract） |
 | `vector_stores.py` | Chroma 薄封装，提供 `get_retriever()` 和 `get_retriever_with_score()`（带相似度阈值检索） |
-| `config_data.py` | 所有配置常量（模型名称、分块参数、Agent 配置、API 配置、OCR 后端） |
-| `file_history_store.py` | 基于文件的 `BaseChatMessageHistory` 实现（每个 session_id 对应一个 JSON 文件） |
+| `config_data.py` | 所有配置常量（模型名称、分块参数、Agent 配置、API 配置、OCR 后端、auth_token） |
+| `file_history_store.py` | `FileChatMessageHistory`（LangChain 兼容）+ `SessionsMetadata`（会话元数据注册表） |
 | `evaluation.py` | RAG 评估体系 — Hit Rate、MRR、检索延迟 |
 | `ui/` | Streamlit 界面 — `app_qa.py`（问答，支持 Direct/API 双模式）、`app_file_uploader.py`（知识库管理） |
-| `api/` | FastAPI 后端 — `server.py`（入口）、`chat.py`（`POST /api/chat`）、`knowledge_base.py`（上传/列表/删除） |
-| `tests/` | 测试脚本 — `test_modules.py`（模块级）、`test_knowledge_base.py`（知识库 CRUD）、`test_api.py`（API 端到端），`data/`（测试用文档） |
+| `api/` | FastAPI 后端 — `server.py`（入口 + Auth 中间件）、`chat.py`（非流式/流式/历史端点）、`knowledge_base.py`（上传/列表/删除） |
+| `tests/` | 测试脚本 — `test_modules.py`（模块级，含 .md 解析测试）、`test_knowledge_base.py`（知识库 CRUD）、`test_api.py`（API 端到端），`data/`（测试用文档含 test_markdown.md） |
 | `docker/` | Docker 配置 — `Dockerfile`（apt 阿里云镜像 + build-essential）+ `docker-compose.yml`（127.0.0.1:8000 + 1GB 内存限制） |
 | `/var/www/yellowduck/rag/` | 生产环境静态前端 — `index.html`（聊天界面）、`upload.html`（知识库管理），由 nginx 直接 serving |
 | `/etc/nginx/sites-available/yellowduck` | nginx 反代配置 — `/rag/api/` → Docker、`/rag/` → 静态文件 |
@@ -63,9 +66,13 @@
 
 ## API 端点
 
+所有 API 端点需要 `Authorization: Bearer guest` 请求头。
+
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| `POST` | `/api/chat` | 发送消息，返回 Agent 回复 |
+| `POST` | `/api/chat` | 发送消息，返回 Agent 回复（非流式） |
+| `POST` | `/api/chat/stream` | 发送消息（SSE 流式，`text/event-stream`） |
+| `GET` | `/api/chat/history?session_id=` | 获取会话聊天历史 |
 | `POST` | `/api/knowledge-base/upload` | 上传文档到知识库 |
 | `GET` | `/api/knowledge-base/documents` | 列出知识库所有文档 |
 | `DELETE` | `/api/knowledge-base/documents/{source}` | 删除指定来源的文档 |
@@ -95,6 +102,9 @@ OCR（双后端可配置）：
 - `ocr_backend`（`"paddleocr"`）：OCR 后端 — `"paddleocr"` | `"pytesseract"`
 - `ocr_language`（`"ch"`）/ `pytesseract_language`（`"chi_sim+eng"`）：各自语言参数
 - `ocr_confidence_threshold`（0.5）：PaddleOCR 置信度阈值
+
+Auth：
+- `auth_token`（`"guest"`）：API 认证共享密钥
 
 ## 常用命令
 
@@ -141,9 +151,17 @@ python -m pytest tests/test_api.py -v
 ### 架构
 
 ```
-https://yellowduck.top/rag/       → /var/www/yellowduck/rag/ (静态 HTML/JS)
-https://yellowduck.top/rag/api/*  → nginx rewrite → 127.0.0.1:8000 (FastAPI Docker)
+https://yellowduck.top/rag/               → /var/www/yellowduck/rag/ (静态 HTML/JS)
+https://yellowduck.top/rag/api/chat/stream→ nginx proxy_buffering off → 127.0.0.1:8000 (SSE)
+https://yellowduck.top/rag/api/*          → nginx rewrite → 127.0.0.1:8000 (FastAPI Docker)
 ```
+
+### 热重载开发
+
+`docker-compose.yml` 已将 Python 源码卷挂载到容器，配合 uvicorn `--reload`：
+- 改 Python 代码 → docker compose restart（~2 秒生效）
+- 改前端 HTML → 直接保存（nginx 直接 serve，0 秒生效）
+- 只有 `requirements.txt` 或 `Dockerfile` 变更才需重建镜像
 
 ### 运维命令
 
@@ -153,18 +171,21 @@ sudo systemctl start rag-agent.service    # 启动
 sudo systemctl stop rag-agent.service     # 停止
 sudo systemctl restart rag-agent.service  # 重启（代码更新后）
 
+# 源码已卷挂载，restart 即可，无需重建
+sudo docker compose -f /home/admin/my_projects/RAG/docker/docker-compose.yml restart
+
 # 查看日志
 sudo journalctl -u rag-agent.service -f
 sudo docker compose -f /home/admin/my_projects/RAG/docker/docker-compose.yml logs -f
 
 # 更新代码
 cd ~/my_projects/RAG && git pull
-sudo systemctl restart rag-agent.service
+sudo docker compose -f /home/admin/my_projects/RAG/docker/docker-compose.yml restart
 
-# 重建镜像（requirements.txt 变更时）
+# 重建镜像（仅 requirements.txt 或 Dockerfile 变更时需要）
 cd ~/my_projects/RAG/docker
 sudo docker compose build
-sudo systemctl restart rag-agent.service
+sudo docker compose up -d
 ```
 
 ### Docker 构建注意事项
@@ -175,6 +196,7 @@ sudo systemctl restart rag-agent.service
 - PaddleOCR 模型**不在构建时预下载**（服务器内存不足导致 segfault），首次 OCR 调用时自动拉取
 - 构建前确保 `data/md5.text` 文件存在，否则 Docker 会创建同名目录
 - 容器内存限制 1GB（`docker-compose.yml` 中 `mem_limit: 1g`）
+- **pip 层永久缓存**：只要 `requirements.txt` 不变，pip 安装层永久缓存。不要手动 `docker builder prune`
 
 ### 环境变量
 

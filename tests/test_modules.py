@@ -65,8 +65,23 @@ def test_docx_parse():
     assert len(text) > 0
 
 
+def test_md_parse():
+    """1.5 Markdown (.md) 文件解析"""
+    md_path = DATA_DIR / "test_markdown.md"
+    if not md_path.exists():
+        pytest.skip("test_markdown.md 不存在")
+
+    from file_parser import parse_file
+
+    text = parse_file(str(md_path))
+    assert len(text) > 0
+    assert "产品使用手册" in text
+    assert "智能客服系统" in text
+    assert "```python" in text  # 代码块应保留
+
+
 def test_image_parse():
-    """1.5 图片 OCR 文件解析（默认后端）"""
+    """1.6 图片 OCR 文件解析（默认后端）"""
     img_path = DATA_DIR / "test_ocr.png"
     if not img_path.exists():
         pytest.skip("test_ocr.png 不存在")
