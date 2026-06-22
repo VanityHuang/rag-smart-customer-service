@@ -35,6 +35,12 @@
 - **Docker 部署** — 源码卷挂载 + uvicorn `--reload` 热重载，代码改动秒级生效
 - **评估体系** — Hit Rate / MRR / 检索延迟指标
 
+## 架构概览
+
+![架构总览](docs/diagrams/architecture_frontend.png)
+
+> 完整架构文档（分层架构 + 模块依赖 + 数据流 + 部署拓扑）→ [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
+
 ## 快速开始
 
 ### 前置条件
@@ -94,6 +100,9 @@ RAG/
 ├── web/                   # 生产环境静态前端
 │   ├── index.html         # 聊天界面
 │   └── upload.html        # 知识库管理
+├── docs/                  # 项目文档
+│   ├── ARCHITECTURE.md    # 架构文档（含 7 张架构图）
+│   └── diagrams/          # Mermaid 源文件 + PNG 导出
 ├── tests/                 # 测试
 │   └── data/              # 测试文档（.txt/.pdf/.docx/.png/.md）
 ├── data/                  # 运行时数据（git ignored）

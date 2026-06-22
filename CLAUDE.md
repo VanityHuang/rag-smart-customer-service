@@ -37,6 +37,7 @@
 | `tests/` | 测试脚本 — `test_modules.py`（模块级，含 .md 解析 + 会话元数据测试）、`test_knowledge_base.py`（知识库 CRUD）、`test_api.py`（API 端到端），`data/`（测试用文档含 test_markdown.md） |
 | `docker/` | Docker 配置 — `Dockerfile`（apt 阿里云镜像 + build-essential）+ `docker-compose.yml`（127.0.0.1:8000 + 1GB 内存限制） |
 | `web/` | 生产环境静态前端 — `index.html`（聊天界面）、`upload.html`（知识库管理），部署时复制到 nginx serving 目录 |
+| `docs/` | 项目文档 — `diagrams/` 包含 4 张 Mermaid 架构图（架构总览/模块依赖/数据流/部署） |
 | `/etc/nginx/sites-available/<project>` | nginx 反代配置 — `/rag/api/` → Docker、`/rag/` → `web/` 静态文件 |
 | `/etc/systemd/system/rag-agent.service` | systemd 服务 — 管理 Docker 容器生命周期 |
 | `data/` | 运行时数据 — `chroma_db/`（向量库）、`chat_history/`（聊天记录 + `sessions_metadata.json` 会话注册表）、`md5.text`（MD5 去重） |
