@@ -28,12 +28,15 @@
   - `calculator` — 安全数学计算
 - **流式打字机效果** — SSE 实时流式输出，token 逐字渲染
 - **Markdown 渲染** — 表格、代码块、列表等格式正确展示
-- **多轮对话记忆** — 基于 JSON 文件的 `BaseChatMessageHistory`，刷新页面后自动加载历史
+- **多轮对话记忆** — 对话轮次截断（保留最近 5 轮），刷新页面后自动加载历史
 - **会话管理** — 侧边栏对话列表，支持新建/切换/重命名/删除，LLM 自动生成标题
+- **Token 用量追踪** — 每次请求统计输入/输出 token，按会话持久化，前端实时显示
+- **输入内容前置拦截** — 长度不足、纯标点、无实质内容的输入自动拒答
+- **安全拒答** — 违法违规/执行动作/工具无结果时友好拒答
 - **用户认证** — Bearer Token 双角色认证（admin/guest），数据完全隔离
 - **RESTful API** — FastAPI 提供聊天、流式、历史、知识库接口
 - **Docker 部署** — 源码卷挂载 + uvicorn `--reload` 热重载，代码改动秒级生效
-- **评估体系** — Hit Rate / MRR / 检索延迟指标
+- **结果类测试体系** — API 冒烟 / Locust 压测 / RAG 参数遍历 / 生产巡检
 
 ## 架构概览
 
@@ -54,33 +57,17 @@ pip install -r requirements.txt
 export DASHSCOPE_API_KEY=sk-xxxxxx
 ```
 
-### 启动 UI 界面
-
-```bash
-# 终端 1：问答界面（端口 8501）
-streamlit run ui/app_qa.py --server.port 8501
-
-# 终端 2：知识库管理（端口 8502）
-streamlit run ui/app_file_uploader.py --server.port 8502
-```
-
-### 启动 API 服务
-
-```bash
-python -m uvicorn api.server:app --reload
-```
-
-### Docker 部署
+### Docker 部署（推荐）
 
 ```bash
 cd docker
 docker-compose up --build
 ```
 
-### 命令行测试
+### 本地开发
 
 ```bash
-python rag_agent.py
+python -m uvicorn api.server:app --reload
 ```
 
 ## 项目结构
@@ -92,7 +79,7 @@ RAG/
 │   └── app_file_uploader.py  # 知识库管理界面
 ├── api/                   # FastAPI 后端
 │   ├── server.py          # 入口（含 Auth 中间件）
-│   ├── chat.py            # 聊天 API（含流式 + 历史端点）
+│   ├── chat.py            # 聊天 API（含流式 + 历史端点 + 输入校验）
 │   ├── knowledge_base.py  # 知识库 API
 │   ├── auth.py            # 角色认证
 │   ├── rate_limit.py      # 访客限流
@@ -100,29 +87,36 @@ RAG/
 │   └── deps.py            # 角色服务工厂
 ├── docker/                # 容器配置
 │   ├── Dockerfile
-│   └── docker-compose.yml
+│   ├── docker-compose.yml
+│   └── .env               # 环境变量（含测试配置）
 ├── web/                   # 生产环境静态前端
-│   ├── index.html         # 聊天界面
+│   ├── index.html         # 聊天界面（含 Token 统计栏）
 │   └── upload.html        # 知识库管理
+├── tests/                 # 结果类测试
+│   ├── test_api.py        # API 冒烟（全端点 + 认证 + 限流）
+│   ├── locustfile.py      # Locust 压测
+│   ├── test_rag_precision_grid.py  # RAG 参数遍历
+│   ├── prod_verify.sh     # 生产环境巡检
+│   └── data/              # 测试文档
 ├── docs/                  # 项目文档
 │   ├── ARCHITECTURE.md    # 架构文档（含 7 张架构图）
 │   └── diagrams/          # Mermaid 源文件 + PNG 导出
-├── tests/                 # 测试
-│   └── data/              # 测试文档（.txt/.pdf/.docx/.png/.md）
 ├── data/                  # 运行时数据（git ignored）
 │   ├── chroma_db/         # 向量数据库（admin/guest 独立）
-│   ├── chat_history/      # 聊天记录（admin/guest 独立）
+│   ├── chat_history/      # 聊天记录 + 会话元数据（admin/guest 独立）
 │   ├── md5_*.text         # MD5 去重记录（admin/guest 独立）
 │   └── rate_limit.json    # 访客限流计数
-├── rag_agent.py           # Agent 核心（Function Calling 循环 + 流式生成）
-├── knowledge_base.py      # 知识库服务（分割 / 嵌入 / 去重）
+├── rag_agent.py           # Agent 核心（Function Calling 循环 + 流式生成 + Token 追踪）
+├── knowledge_base.py      # 知识库服务（分割 / 嵌入 / 去重，北京时间时间戳）
 ├── vector_stores.py       # Chroma 检索封装
 ├── file_parser.py         # 多格式文档解析器（支持 TXT/MD/PDF/DOCX/图片）
-├── file_history_store.py  # 聊天历史存储（文件 + 会话元数据）
+├── file_history_store.py  # 聊天历史存储（文件 + 会话元数据 + Token 累计）
 ├── evaluation.py          # RAG 评估（Hit Rate / MRR / 延迟）
-├── config_data.py         # 全局配置（含 admin_token/guest_token）
-├── requirements.txt      # 完整依赖（含 streamlit/pytest，本地开发用）
-└── requirements-prod.txt # 生产依赖（Docker 用，精简版）
+├── config_data.py         # 全局配置（含 admin_token/guest_token + System Prompt）
+├── bug_and_fix.md         # Bug 修复记录
+├── TESTING.md             # 6 层结果类测试体系指南
+├── requirements.txt       # 完整依赖（含 streamlit/pytest，本地开发用）
+└── requirements-prod.txt  # 生产依赖（Docker 用，精简版）
 ```
 
 ## API 端点
@@ -133,8 +127,8 @@ RAG/
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| `POST` | `/api/chat` | 发送消息（非流式） |
-| `POST` | `/api/chat/stream` | 发送消息（SSE 流式） |
+| `POST` | `/api/chat` | 发送消息（非流式，含累计 token_usage） |
+| `POST` | `/api/chat/stream` | 发送消息（SSE 流式，含累计 token_usage） |
 | `GET` | `/api/chat/history?session_id=` | 获取会话聊天历史 |
 | `GET` | `/api/chat/sessions` | 列出所有会话 |
 | `PUT` | `/api/chat/sessions/{session_id}` | 重命名会话 |
@@ -143,29 +137,25 @@ RAG/
 | `GET` | `/api/knowledge-base/documents` | 列出知识库所有文档 |
 | `DELETE` | `/api/knowledge-base/documents/{source}` | 删除指定来源的文档 |
 
-## 评估
+## 测试
+
+6 层结果类测试体系，详见 [TESTING.md](TESTING.md)：
 
 ```bash
-cd RAG
+# API 冒烟测试（全端点 + 认证 + 限流）
+python -m pytest tests/test_api.py -v
+
+# Locust 压测（10 并发，3 分钟）
+locust -f tests/locustfile.py --host=http://localhost:8000
+
+# RAG 参数遍历（9 种 chunk_size × overlap 组合）
+python -m pytest tests/test_rag_precision_grid.py -v
+
+# RAG 评估
 python evaluation.py
-```
 
-评估自动播种测试文档、运行检索评估、清理数据，不干扰已有知识库。
-
-输出示例：
-```
-查询                           难度           命中       RR
-----------------------------------------------------
-毛衣怎么保养                       easy         OK 1.00
-实木家具保养方法有哪些                  easy         OK 1.00
-冬天的厚外套怎么清洗                   hard         OK 1.00
-
-  [easy] Hit Rate: 3/3 (100%)  MRR: 100.00%
-  [medium] Hit Rate: 3/3 (100%)  MRR: 100.00%
-  [hard] Hit Rate: 3/3 (100%)  MRR: 100.00%
-
-  [总计] Hit Rate: 100.00%  (9/9)
-  [总计] MRR:      100.00%
+# 生产环境巡检
+bash tests/prod_verify.sh
 ```
 
 ## 生产部署
@@ -224,10 +214,12 @@ sudo docker compose up -d
 
 ### 环境变量
 
-需要三个，存储在 `docker/.env`，docker-compose 自动读取：
+存储在 `docker/.env`，docker-compose 自动读取：
 - `DASHSCOPE_API_KEY`：阿里云 DashScope API Key
 - `ADMIN_TOKEN`：管理员密码（完全访问所有功能）
 - `GUEST_TOKEN`：访客密码（功能一致，每小时 10 次 IP 限流，数据隔离）
+- `RAG_PROD_URL`：冒烟测试生产地址
+- `RAG_TEST_TOKEN`：冒烟测试 Bearer token
 
 ### 访问地址
 
