@@ -26,16 +26,17 @@
 
 | 文件 / 目录 | 用途 |
 |------|------|
-| `rag_agent.py` | **核心 Agent** — 自定义 Function Calling 循环，3 个工具（知识库搜索 / 联网搜索 / 计算器），对话历史管理；`stream()` 方法实现 SSE 流式生成；`_generate_title()` LLM 自动标题 |
-| `knowledge_base.py` | 知识库服务 — 文本分割、MD5 去重、嵌入向量化 + 存入 Chroma，支持多格式文档 |
+| `rag_agent.py` | **核心 Agent** — 自定义 Function Calling 循环，3 个工具（知识库搜索 / 联网搜索 / 计算器），对话轮次截断（`MAX_HISTORY_ROUNDS=5`），Token 用量追踪（持久化到会话元数据）；`stream()` 方法实现 SSE 流式生成；`_generate_title()` LLM 自动标题 |
+| `knowledge_base.py` | 知识库服务 — 文本分割、MD5 去重、嵌入向量化 + 存入 Chroma，支持多格式文档，时间戳使用北京时间（UTC+8） |
 | `file_parser.py` | 多格式文档解析器 — TXT / MD / PDF（PyMuPDF）/ DOCX（python-docx）/ 图片 OCR（RapidOCR，ONNX Runtime） |
 | `vector_stores.py` | Chroma 薄封装，提供 `get_retriever()` 和 `get_retriever_with_score()`（带相似度阈值检索） |
 | `config_data.py` | 所有配置常量（模型名称、分块参数、Agent 配置、API 配置、双角色 token） |
 | `file_history_store.py` | `FileChatMessageHistory`（LangChain 兼容）+ `SessionsMetadata`（会话元数据注册表，角色化存储路径） |
 | `evaluation.py` | RAG 评估体系 — Hit Rate、MRR、检索延迟 |
 | `ui/` | Streamlit 界面 — `app_qa.py`（问答，支持 Direct/API 双模式）、`app_file_uploader.py`（知识库管理） |
-| `api/` | FastAPI 后端 — `server.py`（入口 + Auth 中间件）、`chat.py`（角色化聊天端点）、`knowledge_base.py`（角色化 KB 管理）、`auth.py`（角色认证）、`rate_limit.py`（guest IP 限流）、`middleware.py`（认证中间件）、`deps.py`（角色服务工厂） |
-| `tests/` | 测试脚本 — `test_modules.py`（模块级，含 .md 解析 + 会话元数据测试）、`test_knowledge_base.py`（知识库 CRUD）、`test_api.py`（API 端到端），`data/`（测试用文档含 test_markdown.md） |
+| `api/` | FastAPI 后端 — `server.py`（入口 + Auth 中间件）、`chat.py`（角色化聊天端点 + 输入内容前置拦截）、`knowledge_base.py`（角色化 KB 管理）、`auth.py`（角色认证）、`rate_limit.py`（guest IP 限流）、`middleware.py`（认证中间件）、`deps.py`（角色服务工厂） |
+| `tests/` | 测试脚本 — `test_api.py`（API 冒烟，覆盖全部端点 + 认证 + 限流）、`locustfile.py`（Locust 压测）、`test_rag_precision_grid.py`（RAG 参数遍历）、`prod_verify.sh`（生产环境巡检）、`data/`（测试用文档） |
+| `bug_and_fix.md` | Bug 修复记录（Token 截断 bug、Agent 空回答 bug） |
 | `docker/` | Docker 配置 — `Dockerfile`（apt 阿里云镜像 + build-essential）+ `docker-compose.yml`（127.0.0.1:8000 + 1GB 内存限制） |
 | `web/` | 生产环境静态前端 — `index.html`（聊天界面）、`upload.html`（知识库管理），部署时复制到 nginx serving 目录 |
 | `docs/` | 项目文档 — `diagrams/` 包含 4 张 Mermaid 架构图（架构总览/模块依赖/数据流/部署） |
@@ -43,7 +44,7 @@
 | `/etc/systemd/system/rag-agent.service` | systemd 服务 — 管理 Docker 容器生命周期 |
 | `data/` | 运行时数据 — `chroma_db/{admin,guest}/`（角色化向量库）、`chat_history/{admin,guest}/`（角色化聊天记录 + 元数据）、`md5_{admin,guest}.text`（角色化 MD5 去重）、`rate_limit.json`（guest 限流计数） |
 | `requirements.txt` | Python 依赖清单 |
-| `TESTING.md` | 7 层验证体系指南（从模块级到 Docker 全量测试） |
+| `TESTING.md` | 6 层结果类测试体系指南（API 冒烟 / Docker 构建 / RAG 评估 / 压测 / 参数遍历 / 生产验证） |
 | `pytest.ini` | Pytest 配置（`addopts = -v --tb=short`，定义 `external` 标记） |
 
 ## 架构流程
@@ -76,8 +77,8 @@
 
 | 方法 | 路径 | 角色 | 说明 |
 |------|------|------|------|
-| `POST` | `/api/chat` | admin/guest | 发送消息，返回 Agent 回复（非流式） |
-| `POST` | `/api/chat/stream` | admin/guest | 发送消息（SSE 流式，`text/event-stream`） |
+| `POST` | `/api/chat` | admin/guest | 发送消息，返回 Agent 回复（非流式，含累计 token_usage） |
+| `POST` | `/api/chat/stream` | admin/guest | 发送消息（SSE 流式，`text/event-stream`，含累计 token_usage） |
 | `GET` | `/api/chat/history?session_id=` | admin/guest | 获取会话聊天历史 |
 | `GET` | `/api/chat/sessions` | admin/guest | 列出所有会话（按更新时间倒序） |
 | `PUT` | `/api/chat/sessions/{session_id}` | admin/guest | 重命名会话 |
@@ -96,9 +97,10 @@
 - `retriever_k`（3）：每次查询检索的文档数量
 
 Agent：
-- `AGENT_SYSTEM_PROMPT`：Agent 系统提示词（工具使用规则）
+- `AGENT_SYSTEM_PROMPT`：Agent 系统提示词（工具使用规则 + 拒答规则）
 - `agent_max_iterations`（5）：Agent 最大工具调用轮数
 - `agent_verbose`（True）：是否打印每次工具调用的日志
+- `MAX_HISTORY_ROUNDS`（5）：保留最近 5 轮对话上下文
 
 搜索：
 - `web_search_max_results`（5）：联网搜索返回的最大结果数
@@ -121,37 +123,26 @@ Auth：
 所有命令从仓库根目录执行：
 
 ```bash
-# 启动问答聊天界面（Direct Mode, 端口 8501）
-streamlit run ui/app_qa.py --server.port 8501
-
-# 启动知识库管理界面（端口 8502）
-streamlit run ui/app_file_uploader.py --server.port 8502
-
 # 启动 FastAPI 后端（端口 8000）
 python -m uvicorn api.server:app --reload
 
 # Docker 全量启动
 cd docker && docker-compose up --build
 
-# 模块级验证（无需 API Key）
-python -m pytest tests/test_modules.py -v
-
-# 全部测试（需 API Key，自动跳过缺 Key 的测试）
-python -m pytest tests/ -v
-
-# 仅跑无需 API Key 的测试
-python -m pytest tests/ -v -m "not external"
-
-# Agent 命令行交互测试
-python rag_agent.py
+# API 冒烟测试（需服务运行）
+python -m pytest tests/test_api.py -v
 
 # RAG 评估
 python evaluation.py
 
-# 运行特定测试
-python -m pytest tests/test_modules.py -v -k "txt"
-python -m pytest tests/test_knowledge_base.py -v
-python -m pytest tests/test_api.py -v
+# Locust 压测
+locust -f tests/locustfile.py --host=http://localhost:8000
+
+# RAG 参数遍历
+python -m pytest tests/test_rag_precision_grid.py -v
+
+# 生产环境巡检
+bash tests/prod_verify.sh
 ```
 
 ## 生产部署（<your-domain.com>/rag）
@@ -210,10 +201,12 @@ sudo docker compose up -d
 
 ### 环境变量
 
-需要三个，存储在 `docker/.env`，docker-compose 自动读取：
+存储在 `docker/.env`，docker-compose 自动读取：
 - `DASHSCOPE_API_KEY`：阿里云 DashScope API Key
 - `ADMIN_TOKEN`：管理员密码（完全访问所有功能）
 - `GUEST_TOKEN`：访客密码（功能与 admin 一致，每小时 10 次 IP 限流，数据隔离）
+- `RAG_PROD_URL`：冒烟测试生产地址（`https://yellowduck.top/rag`）
+- `RAG_TEST_TOKEN`：冒烟测试 Bearer token（`guest123`）
 
 ### 访问地址
 

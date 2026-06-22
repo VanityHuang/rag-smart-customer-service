@@ -55,6 +55,8 @@ class SessionsMetadata:
             "title": "新对话",
             "created_at": now,
             "updated_at": now,
+            "input_tokens": 0,
+            "output_tokens": 0,
         }
         self._write(data)
 
@@ -82,6 +84,29 @@ class SessionsMetadata:
             if updated_at is not None:
                 data[session_id]["updated_at"] = updated_at
             self._write(data)
+
+    def add_token_usage(self, session_id: str, input_tokens: int, output_tokens: int):
+        """累加会话的 token 用量"""
+        data = self._read()
+        if session_id not in data:
+            data[session_id] = {
+                "title": "新对话",
+                "created_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            }
+        entry = data[session_id]
+        entry["input_tokens"] = entry.get("input_tokens", 0) + input_tokens
+        entry["output_tokens"] = entry.get("output_tokens", 0) + output_tokens
+        self._write(data)
+
+    def get_token_usage(self, session_id: str) -> dict:
+        """获取会话累计的 token 用量"""
+        data = self._read()
+        entry = data.get(session_id, {})
+        return {
+            "input_tokens": entry.get("input_tokens", 0),
+            "output_tokens": entry.get("output_tokens", 0),
+        }
 
     def delete_session(self, session_id: str):
         data = self._read()

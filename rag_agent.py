@@ -17,6 +17,9 @@ from vector_stores import VectorStoreService
 
 logger = logging.getLogger(__name__)
 
+# 对话轮次截断配置
+MAX_HISTORY_ROUNDS = 5  # 保留最近 5 轮对话（10 条消息：5 human + 5 ai）
+
 
 class RagAgentService:
     def __init__(self, vector_service: VectorStoreService = None, role: str = "admin"):
@@ -32,6 +35,43 @@ class RagAgentService:
         self.tools = self._create_tools()
         self.tool_map = {t.name: t for t in self.tools}
         self.model_with_tools = self.chat_model.bind_tools(self.tools)
+        # Token 用量追踪（每次请求重置）
+        self._total_usage = {"input_tokens": 0, "output_tokens": 0}
+
+    def _track_usage(self, response):
+        """累加 LLM 调用的 token 用量"""
+        usage = getattr(response, "usage_metadata", None)
+        if usage:
+            inp = getattr(usage, "input_tokens", 0) or 0
+            out = getattr(usage, "output_tokens", 0) or 0
+            self._total_usage["input_tokens"] += inp
+            self._total_usage["output_tokens"] += out
+            return
+
+        # 兼容：尝试从 response_metadata 中提取（部分模型提供商）
+        meta = getattr(response, "response_metadata", None)
+        if meta and isinstance(meta, dict):
+            usage_info = meta.get("usage") or meta.get("token_usage") or {}
+            self._total_usage["input_tokens"] += usage_info.get("prompt_tokens", 0) or usage_info.get("input_tokens", 0)
+            self._total_usage["output_tokens"] += usage_info.get("completion_tokens", 0) or usage_info.get("output_tokens", 0)
+            return
+
+        logger.debug(f"_track_usage: 无法提取 token 用量, response 类型={type(response).__name__}")
+
+    @property
+    def token_usage(self) -> dict:
+        """返回本次请求的 token 用量明细"""
+        return dict(self._total_usage)
+
+    def _truncate_history(self, history_messages: list) -> list:
+        """按轮次截断历史消息，保留最近 MAX_HISTORY_ROUNDS 轮对话"""
+        if not history_messages:
+            return []
+        # 每轮 = 1 human + 1 ai = 2 条消息，保留最近 N 轮
+        max_messages = MAX_HISTORY_ROUNDS * 2
+        if len(history_messages) <= max_messages:
+            return history_messages
+        return history_messages[-max_messages:]
 
     def _create_tools(self):
         """定义 Agent 可用的三个工具"""
@@ -201,9 +241,10 @@ class RagAgentService:
                 logger.debug(f"Agent iteration {iteration + 1}/{max_iter}")
 
             response = self.model_with_tools.invoke(messages)
+            self._track_usage(response)
 
             if not response.tool_calls:
-                return response  # 最终回答
+                return response  # 最终回答（包括拒答）
 
             # 追加 AI 的工具调用消息到历史
             messages.append(response)
@@ -264,12 +305,17 @@ class RagAgentService:
 
     def invoke(self, message: str, session_id: str = "user_001") -> str:
         """处理用户消息并返回 Agent 回答"""
+        self._total_usage = {"input_tokens": 0, "output_tokens": 0}
         history = get_history(session_id, self.role)
         user_message = HumanMessage(content=message)
 
+        # Token 预算截断：保留最近的历史消息，防止上下文过长
+        full_history = list(history.messages)
+        truncated = self._truncate_history(full_history)
+
         messages = [
             SystemMessage(content=config.AGENT_SYSTEM_PROMPT),
-            *history.messages,
+            *truncated,
             user_message,
         ]
 
@@ -289,12 +335,17 @@ class RagAgentService:
         1. Agent 循环（同步）：用 model_with_tools.invoke 检测 tool_calls
         2. 流式输出（异步）：用 chat_model.stream 逐 token 生成最终答案
         """
+        self._total_usage = {"input_tokens": 0, "output_tokens": 0}
         history = get_history(session_id, self.role)
         user_message = HumanMessage(content=message)
 
+        # Token 预算截断
+        full_history = list(history.messages)
+        truncated = self._truncate_history(full_history)
+
         messages = [
             SystemMessage(content=config.AGENT_SYSTEM_PROMPT),
-            *history.messages,
+            *truncated,
             user_message,
         ]
 
@@ -306,10 +357,9 @@ class RagAgentService:
                 logger.debug(f"Agent iteration {iteration + 1}/{max_iter}")
 
             response = self.model_with_tools.invoke(messages)
+            self._track_usage(response)
 
             if not response.tool_calls:
-                # 最终回答 — 跳出循环，进入流式阶段（不追加到 messages，
-                # 让 stream 调用重新生成，避免浪费一次 invoke 的 content）
                 break
 
             # 有工具调用：追加响应和工具结果，继续循环

@@ -7,7 +7,10 @@ import hashlib
 from langchain_chroma import Chroma
 from langchain_community.embeddings import DashScopeEmbeddings
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
+
+# 北京时间 UTC+8
+_BEIJING_TZ = timezone(timedelta(hours=8))
 
 
 def check_md5(md5_str: str, md5_path: str = None):
@@ -89,7 +92,7 @@ class KnowledgeBaseService(object):
 
         meta = {
             "source": filename,
-            "create_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "create_time": datetime.now(_BEIJING_TZ).strftime("%Y-%m-%d %H:%M:%S"),
             "operator": "小孙",
         }
 

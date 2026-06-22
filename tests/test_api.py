@@ -1,84 +1,236 @@
-"""第 4 层：FastAPI 端到端测试（需要 API Key）"""
+"""API 冒烟测试 — 覆盖全部端点 + 认证 + 限流
 
-from pathlib import Path
+双目标测试：同一套用例分别对 local 和 prod 执行。
+通过环境变量配置：
+  RAG_LOCAL_URL  — 本地服务地址（默认 http://localhost:8000）
+  RAG_PROD_URL   — 生产环境地址（不设置则跳过生产测试）
+  RAG_TEST_TOKEN — Bearer token（默认 guest）
+"""
+
+import os
+import uuid
 
 import pytest
 import requests
 
-API_DIR = Path(__file__).parent.parent
-BASE_URL = "http://localhost:8000"
+LOCAL_URL = os.environ.get("RAG_LOCAL_URL", "http://localhost:8000")
+PROD_URL = os.environ.get("RAG_PROD_URL", "")
+TOKEN = os.environ.get("RAG_TEST_TOKEN", "guest")
+
+# ── 构建测试目标列表 ──
+_TARGETS = [("local", LOCAL_URL)]
+if PROD_URL:
+    _TARGETS.append(("prod", PROD_URL))
 
 
-@pytest.fixture(scope="session")
-def server():
-    """启动 FastAPI 服务（session 级，所有测试共享）"""
-    import subprocess
-    import sys
-    import time
+def _headers(token=TOKEN):
+    return {"Authorization": f"Bearer {token}"}
 
-    proc = subprocess.Popen(
-        [sys.executable, "-m", "uvicorn", "api.server:app",
-         "--host", "0.0.0.0", "--port", "8000"],
-        cwd=str(API_DIR),
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-    )
 
-    # 等待服务器就绪（最多 15 秒）
-    for i in range(15):
-        time.sleep(1)
+# ── 可用的 pytest marker ──
+pytestmark = pytest.mark.external
+
+
+# ── 参数化 fixture：分别对 local/prod 执行 ──
+@pytest.fixture(params=_TARGETS, ids=[t[0] for t in _TARGETS])
+def target(request):
+    """返回 (name, base_url) 元组"""
+    name, base_url = request.param
+    # 生产环境可达性检查
+    if name == "prod":
         try:
-            r = requests.get(f"{BASE_URL}/docs", timeout=3)
-            if r.status_code < 500:
-                yield
-                return
+            r = requests.get(f"{base_url}/", timeout=5)
+            if r.status_code >= 500:
+                pytest.skip(f"生产环境不可达: {base_url}")
         except requests.ConnectionError:
-            continue
-
-    proc.kill()
-    pytest.fail("服务器启动超时")
-
-    # teardown
-    if proc:
-        proc.terminate()
-        proc.wait(timeout=5)
+            pytest.skip(f"生产环境无法连接: {base_url}")
+    return name, base_url
 
 
-@pytest.mark.external
-class TestAPI:
-    """API 端到端测试"""
+# ── 认证测试 ──
 
-    def test_chat(self, server):
-        """4.1 聊天 API — POST /api/chat"""
+class TestAuth:
+    def test_no_auth_returns_401(self, target):
+        """无 token 访问 → 401"""
+        _, base = target
+        resp = requests.get(f"{base}/api/chat/sessions")
+        assert resp.status_code == 401
+
+    def test_invalid_token_returns_401(self, target):
+        """错误 token → 401"""
+        _, base = target
+        resp = requests.get(
+            f"{base}/api/chat/sessions",
+            headers={"Authorization": "Bearer invalid_token_xyz"},
+        )
+        assert resp.status_code == 401
+
+
+# ── 聊天端点 ──
+
+class TestChat:
+    def test_chat_endpoint(self, target):
+        """POST /api/chat → 200 + response 非空"""
+        _, base = target
+        sid = f"test_smoke_{uuid.uuid4().hex[:8]}"
         resp = requests.post(
-            f"{BASE_URL}/api/chat",
-            json={"message": "你好"},
+            f"{base}/api/chat",
+            json={"message": "你好", "session_id": sid},
+            headers=_headers(),
             timeout=30,
         )
         resp.raise_for_status()
         data = resp.json()
+        assert "response" in data or "reply" in data or "answer" in data
         reply = data.get("response") or data.get("reply") or data.get("answer", "")
         assert len(reply) > 0
 
-    def test_upload(self, server, tmp_path):
-        """4.2 知识库上传 — POST /api/knowledge-base/upload"""
-        upload_file = tmp_path / "_tmp_upload.txt"
-        upload_file.write_text("测试内容，这是一段用于上传的文本。", encoding="utf-8")
+    def test_chat_stream(self, target):
+        """POST /api/chat/stream → 200 + text/event-stream"""
+        _, base = target
+        sid = f"test_smoke_{uuid.uuid4().hex[:8]}"
+        resp = requests.post(
+            f"{base}/api/chat/stream",
+            json={"message": "1+1=?", "session_id": sid},
+            headers=_headers(),
+            stream=True,
+            timeout=30,
+        )
+        resp.raise_for_status()
+        assert "text/event-stream" in resp.headers.get("Content-Type", "")
+        # 读取第一个 SSE 事件
+        lines = []
+        for line in resp.iter_lines(decode_unicode=True):
+            lines.append(line)
+            if len(lines) >= 3:
+                break
+        assert any("data:" in line for line in lines)
 
-        with open(upload_file, "rb") as f:
+
+# ── 会话管理端点 ──
+
+class TestSessions:
+    def test_list_sessions(self, target):
+        """GET /api/chat/sessions → 200 + list"""
+        _, base = target
+        resp = requests.get(f"{base}/api/chat/sessions", headers=_headers(), timeout=10)
+        resp.raise_for_status()
+        data = resp.json()
+        assert isinstance(data, list)
+
+    def test_chat_history(self, target):
+        """GET /api/chat/history → 200 + messages 列表"""
+        _, base = target
+        sid = f"test_smoke_{uuid.uuid4().hex[:8]}"
+        # 先发一条消息确保会话存在
+        requests.post(
+            f"{base}/api/chat",
+            json={"message": "测试历史记录", "session_id": sid},
+            headers=_headers(),
+            timeout=30,
+        )
+        resp = requests.get(
+            f"{base}/api/chat/history",
+            params={"session_id": sid},
+            headers=_headers(),
+            timeout=10,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        assert "messages" in data
+        assert isinstance(data["messages"], list)
+
+    def test_session_rename(self, target):
+        """PUT /api/chat/sessions/{id} → 200"""
+        _, base = target
+        sid = f"test_rename_{uuid.uuid4().hex[:8]}"
+        # 先创建会话
+        requests.post(
+            f"{base}/api/chat",
+            json={"message": "用于重命名测试", "session_id": sid},
+            headers=_headers(),
+            timeout=30,
+        )
+        resp = requests.put(
+            f"{base}/api/chat/sessions/{sid}",
+            json={"title": "重命名测试会话"},
+            headers=_headers(),
+            timeout=10,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        assert data.get("title") == "重命名测试会话"
+
+    def test_session_delete(self, target):
+        """DELETE /api/chat/sessions/{id} → 200"""
+        _, base = target
+        sid = f"test_delete_{uuid.uuid4().hex[:8]}"
+        # 先创建会话
+        requests.post(
+            f"{base}/api/chat",
+            json={"message": "用于删除测试", "session_id": sid},
+            headers=_headers(),
+            timeout=30,
+        )
+        resp = requests.delete(
+            f"{base}/api/chat/sessions/{sid}",
+            headers=_headers(),
+            timeout=10,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        assert "已删除" in data.get("message", "")
+
+
+# ── 知识库端点 ──
+
+class TestKnowledgeBase:
+    def test_list_documents(self, target):
+        """GET /api/knowledge-base/documents → 200 + list"""
+        _, base = target
+        resp = requests.get(
+            f"{base}/api/knowledge-base/documents",
+            headers=_headers(),
+            timeout=10,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        assert isinstance(data, list)
+
+    def test_upload_document(self, target):
+        """POST /api/knowledge-base/upload → 200"""
+        _, base = target
+        content = f"冒烟测试文档 {uuid.uuid4().hex[:8]}"
+        resp = requests.post(
+            f"{base}/api/knowledge-base/upload",
+            files={"file": ("_smoke_test.txt", content.encode(), "text/plain")},
+            headers=_headers(),
+            timeout=30,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        assert "message" in data or "filename" in data
+
+
+# ── 限流测试（仅 guest） ──
+
+class TestRateLimit:
+    @pytest.mark.skipif(TOKEN != "guest", reason="限流测试仅针对 guest token")
+    def test_guest_rate_limit(self, target):
+        """连续发 11 次，第 11 次返回 429"""
+        _, base = target
+        sid = f"test_ratelimit_{uuid.uuid4().hex[:8]}"
+        responses = []
+        for i in range(11):
             resp = requests.post(
-                f"{BASE_URL}/api/knowledge-base/upload",
-                files={"file": ("_tmp_upload.txt", f, "text/plain")},
+                f"{base}/api/chat",
+                json={"message": f"限流测试 {i+1}", "session_id": sid},
+                headers=_headers(),
                 timeout=30,
             )
-        resp.raise_for_status()
-        data = resp.json()
-        assert data is not None
+            responses.append(resp.status_code)
 
-    def test_list_documents(self, server):
-        """4.3 文档列表 — GET /api/knowledge-base/documents"""
-        resp = requests.get(f"{BASE_URL}/api/knowledge-base/documents", timeout=10)
-        resp.raise_for_status()
-        data = resp.json()
-        docs = data if isinstance(data, list) else data.get("documents", [])
-        assert isinstance(docs, list)
+        # 前 10 次应成功（200），第 11 次应被限流（429）
+        assert responses[-1] == 429, f"第 11 次请求应返回 429，实际返回 {responses[-1]}"
+        assert all(code == 200 for code in responses[:-1]), \
+            f"前 10 次应全部 200，实际: {responses[:-1]}"

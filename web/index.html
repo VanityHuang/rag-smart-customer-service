@@ -236,6 +236,15 @@
 
   .error-msg { color: #f87171; font-size: 0.8rem; text-align: center; padding: 4px 20px; }
 
+  /* ── Token 统计栏 ── */
+  .token-bar {
+    display: flex; align-items: center; justify-content: center;
+    gap: 16px; padding: 4px 20px; background: #1e293b;
+    border-top: 1px solid #334155; font-size: 0.75rem; color: #64748b;
+    flex-shrink: 0;
+  }
+  .token-bar span { white-space: nowrap; }
+
   /* ── 移动端 ── */
   @media (max-width: 768px) {
     .sidebar {
@@ -304,6 +313,10 @@
     </div>
 
     <div class="error-msg" id="error-msg"></div>
+
+    <div class="token-bar" id="token-bar">
+      <span id="token-display">Tokens: —</span>
+    </div>
   </div>
 </div>
 
@@ -318,6 +331,24 @@ var userInput = document.getElementById('user-input');
 var sendBtn = document.getElementById('send-btn');
 var emptyState = document.getElementById('empty-state');
 var errorMsg = document.getElementById('error-msg');
+var tokenDisplay = document.getElementById('token-display');
+
+/* ────────── Token 统计 ────────── */
+var sessionTokens = { input_tokens: 0, output_tokens: 0 };
+
+function updateTokenDisplay() {
+  var total = sessionTokens.input_tokens + sessionTokens.output_tokens;
+  if (total === 0) {
+    tokenDisplay.textContent = '本次对话 Token: —';
+  } else {
+    tokenDisplay.textContent = '本次对话 Token — 输入: ' + sessionTokens.input_tokens.toLocaleString() + '  输出: ' + sessionTokens.output_tokens.toLocaleString() + '  合计: ' + total.toLocaleString();
+  }
+}
+
+function setTokenStats(inputTokens, outputTokens) {
+  sessionTokens = { input_tokens: inputTokens, output_tokens: outputTokens };
+  updateTokenDisplay();
+}
 
 /* ────────── Auth ────────── */
 var AUTH_STORAGE_KEY = 'rag_auth_token';
@@ -381,7 +412,11 @@ function switchSession(newId) {
 
 function createNewSession() {
   var newId = 'rag_' + Math.random().toString(36).substring(2, 15) + Date.now().toString(36);
-  switchSession(newId);
+  activeSessionId = newId;
+  localStorage.setItem('rag_active_session_id', newId);
+  clearChatMessages();
+  setTokenStats(0, 0);
+  renderSessionList();
   refreshSessionList();
 }
 
@@ -535,6 +570,12 @@ async function loadHistory() {
         else { addAssistantMessage(msg.content); }
       }
     }
+    // 加载累计 token 用量
+    if (data.token_usage) {
+      setTokenStats(data.token_usage.input_tokens || 0, data.token_usage.output_tokens || 0);
+    } else {
+      setTokenStats(0, 0);
+    }
   } catch (err) { console.error('加载历史失败:', err); }
 }
 
@@ -578,7 +619,13 @@ async function sendMessage() {
           try {
             var d = JSON.parse(line.slice(6));
             if (d.error) throw new Error(d.error);
-            if (d.done) break;
+            if (d.done) {
+              // 最后一帧：携带累计 token_usage
+              if (d.token_usage) {
+                setTokenStats(d.token_usage.input_tokens || 0, d.token_usage.output_tokens || 0);
+              }
+              break;
+            }
             if (d.token) {
               content += d.token;
               var b = tempDiv.querySelector('.bubble');

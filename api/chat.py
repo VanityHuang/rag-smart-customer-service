@@ -2,7 +2,9 @@
 import datetime
 import glob
 import json
+import logging
 import os as _os
+import re
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
@@ -12,6 +14,35 @@ from api.deps import get_rag_service
 from api.rate_limit import check_rate_limit, get_client_ip, RATE_LIMIT_MESSAGE
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
+
+# ── 输入内容前置拦截 ──
+
+_REJECT_MESSAGE = (
+    "抱歉，我无法处理这条消息。请输入至少 2 个字的有效问题，"
+    "我才能为你提供帮助。"
+)
+
+
+def validate_input(message: str) -> str | None:
+    """校验用户输入，返回拒绝理由；通过则返回 None"""
+    msg = message.strip()
+
+    # 长度不足
+    if len(msg) < 2:
+        return _REJECT_MESSAGE
+
+    # 不含任何中文字符或英文单词（纯标点/表情/空格）
+    if not re.search(r'[一-鿿]|[a-zA-Z]+', msg):
+        return _REJECT_MESSAGE
+
+    # 去除常见语气词/填充词后，剩余内容不足 2 字 → 无实质内容
+    filler = re.sub(r'[啊哈嗯哦嘿呀吧呢嘛啦嘻唉哎噢呃额]', '', msg)
+    meaningful = re.sub(r'[^\w]', '', filler)  # 再去标点
+    if len(meaningful) < 2:
+        return _REJECT_MESSAGE
+
+    return None
 
 
 class ChatRequest(BaseModel):
@@ -22,6 +53,7 @@ class ChatRequest(BaseModel):
 class ChatResponse(BaseModel):
     response: str
     session_id: str
+    token_usage: dict = {}
 
 
 @router.post("", response_model=ChatResponse)
@@ -36,10 +68,37 @@ def chat(request: ChatRequest, req: Request):
         if not allowed:
             raise HTTPException(status_code=429, detail=RATE_LIMIT_MESSAGE)
 
+    # 输入内容前置拦截
+    reject_reason = validate_input(request.message)
+    if reject_reason:
+        return ChatResponse(
+            response=reject_reason,
+            session_id=request.session_id,
+            token_usage={"input_tokens": 0, "output_tokens": 0},
+        )
+
     try:
         rag_service = get_rag_service(role)
         result = rag_service.invoke(request.message, request.session_id)
-        return ChatResponse(response=result, session_id=request.session_id)
+        usage = rag_service.token_usage
+        # 累加到会话元数据（持久化）
+        store = get_metadata_store(role)
+        store.add_token_usage(
+            request.session_id,
+            usage["input_tokens"],
+            usage["output_tokens"],
+        )
+        cumulative = store.get_token_usage(request.session_id)
+        logger.info(
+            f"[{role}] session={request.session_id} "
+            f"tokens=in:{usage['input_tokens']}/out:{usage['output_tokens']} "
+            f"(cumulative: in:{cumulative['input_tokens']}/out:{cumulative['output_tokens']})"
+        )
+        return ChatResponse(
+            response=result,
+            session_id=request.session_id,
+            token_usage=cumulative,
+        )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -56,13 +115,30 @@ def chat_stream(request: ChatRequest, req: Request):
         if not allowed:
             raise HTTPException(status_code=429, detail=RATE_LIMIT_MESSAGE)
 
+    # 输入内容前置拦截
+    reject_reason = validate_input(request.message)
+    if reject_reason:
+        def reject_stream():
+            yield f"data: {json.dumps({'token': reject_reason, 'done': False}, ensure_ascii=False)}\n\n"
+            yield f"data: {json.dumps({'done': True, 'token_usage': {'input_tokens': 0, 'output_tokens': 0}}, ensure_ascii=False)}\n\n"
+        return StreamingResponse(reject_stream(), media_type="text/event-stream")
+
     rag_service = get_rag_service(role)
 
     def generate():
         try:
             for token in rag_service.stream(request.message, request.session_id):
                 yield f"data: {json.dumps({'token': token, 'done': False}, ensure_ascii=False)}\n\n"
-            yield f"data: {json.dumps({'token': '', 'done': True})}\n\n"
+            usage = rag_service.token_usage
+            # 累加到会话元数据（持久化）
+            store = get_metadata_store(role)
+            store.add_token_usage(
+                request.session_id,
+                usage["input_tokens"],
+                usage["output_tokens"],
+            )
+            cumulative = store.get_token_usage(request.session_id)
+            yield f"data: {json.dumps({'done': True, 'token_usage': cumulative}, ensure_ascii=False)}\n\n"
         except Exception as e:
             yield f"data: {json.dumps({'error': str(e)})}\n\n"
 
@@ -89,7 +165,10 @@ def get_chat_history(session_id: str, req: Request):
                 messages.append({"role": "user", "content": msg.content})
             elif msg.type == "ai":
                 messages.append({"role": "assistant", "content": msg.content})
-        return {"session_id": session_id, "messages": messages}
+        # 返回累计 token 用量
+        store = get_metadata_store(role)
+        token_usage = store.get_token_usage(session_id)
+        return {"session_id": session_id, "messages": messages, "token_usage": token_usage}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
