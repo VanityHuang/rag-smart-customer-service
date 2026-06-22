@@ -10,13 +10,13 @@
 | 对话模型 | 通义千问 `qwen3-max`（阿里云 DashScope） |
 | 嵌入模型 | `text-embedding-v4`（阿里云 DashScope） |
 | 向量数据库 | Chroma（本地持久化） |
-| 文档解析 | PyMuPDF（PDF）、python-docx（DOCX）、PaddleOCR（图片，可切换 Tesseract） |
+| 文档解析 | PyMuPDF（PDF）、python-docx（DOCX）、RapidOCR（图片 OCR，ONNX Runtime） |
 | 前端（开发） | Streamlit（问答界面 + 知识库管理） |
 | 前端（生产） | 静态 HTML/CSS/JS（nginx 直接 serving） |
 | API | FastAPI + uvicorn |
 | 流式响应 | SSE（Server-Sent Events） |
 | Markdown 渲染 | marked.js + DOMPurify（前端） |
-| 认证 | Bearer Token 单密码保护 |
+| 认证 | Bearer Token 双角色认证（admin/guest） |
 | 容器化 | Docker + docker-compose |
 
 ## 功能
@@ -30,7 +30,7 @@
 - **Markdown 渲染** — 表格、代码块、列表等格式正确展示
 - **多轮对话记忆** — 基于 JSON 文件的 `BaseChatMessageHistory`，刷新页面后自动加载历史
 - **会话管理** — 侧边栏对话列表，支持新建/切换/重命名/删除，LLM 自动生成标题
-- **用户认证** — Bearer Token 单密码保护（API + 前端）
+- **用户认证** — Bearer Token 双角色认证（admin/guest），数据完全隔离
 - **RESTful API** — FastAPI 提供聊天、流式、历史、知识库接口
 - **Docker 部署** — 源码卷挂载 + uvicorn `--reload` 热重载，代码改动秒级生效
 - **评估体系** — Hit Rate / MRR / 检索延迟指标
@@ -93,7 +93,11 @@ RAG/
 ├── api/                   # FastAPI 后端
 │   ├── server.py          # 入口（含 Auth 中间件）
 │   ├── chat.py            # 聊天 API（含流式 + 历史端点）
-│   └── knowledge_base.py  # 知识库 API
+│   ├── knowledge_base.py  # 知识库 API
+│   ├── auth.py            # 角色认证
+│   ├── rate_limit.py      # 访客限流
+│   ├── middleware.py       # 认证中间件
+│   └── deps.py            # 角色服务工厂
 ├── docker/                # 容器配置
 │   ├── Dockerfile
 │   └── docker-compose.yml
@@ -106,22 +110,26 @@ RAG/
 ├── tests/                 # 测试
 │   └── data/              # 测试文档（.txt/.pdf/.docx/.png/.md）
 ├── data/                  # 运行时数据（git ignored）
-│   ├── chroma_db/         # 向量数据库
-│   ├── chat_history/      # 聊天记录 + sessions_metadata.json
-│   └── md5.text           # MD5 去重记录
+│   ├── chroma_db/         # 向量数据库（admin/guest 独立）
+│   ├── chat_history/      # 聊天记录（admin/guest 独立）
+│   ├── md5_*.text         # MD5 去重记录（admin/guest 独立）
+│   └── rate_limit.json    # 访客限流计数
 ├── rag_agent.py           # Agent 核心（Function Calling 循环 + 流式生成）
 ├── knowledge_base.py      # 知识库服务（分割 / 嵌入 / 去重）
 ├── vector_stores.py       # Chroma 检索封装
 ├── file_parser.py         # 多格式文档解析器（支持 TXT/MD/PDF/DOCX/图片）
 ├── file_history_store.py  # 聊天历史存储（文件 + 会话元数据）
 ├── evaluation.py          # RAG 评估（Hit Rate / MRR / 延迟）
-├── config_data.py         # 全局配置（含 auth_token）
-└── requirements.txt
+├── config_data.py         # 全局配置（含 admin_token/guest_token）
+├── requirements.txt      # 完整依赖（含 streamlit/pytest，本地开发用）
+└── requirements-prod.txt # 生产依赖（Docker 用，精简版）
 ```
 
 ## API 端点
 
-所有 API 端点需要 `Authorization: Bearer <token>` 请求头（token 通过 `AUTH_TOKEN` 环境变量配置）。
+所有 API 端点需要 `Authorization: Bearer <password>` 请求头（密码在 `docker/.env` 中配置）。
+- **admin**（`admin2026`）：完全访问，不限次数
+- **guest**（`guest123`）：功能完全一致，每小时 10 次 IP 限流，数据与 admin 隔离
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
@@ -177,7 +185,7 @@ python evaluation.py
 | 组件 | 位置 |
 |------|------|
 | 静态前端 | `web/`（复制到 nginx serving 目录） |
-| Docker 镜像 | `docker-rag-agent:latest` (~1.3 GB) |
+| Docker 镜像 | `docker-rag-agent:latest` (~4 GB) |
 | systemd 服务 | `rag-agent.service` |
 | API Key 配置 | `/home/admin/my_projects/RAG/docker/.env` |
 | nginx 配置 | `/etc/nginx/sites-available/&lt;project&gt;` |
@@ -208,15 +216,18 @@ sudo docker compose up -d
 
 - Dockerfile 已将 apt 源替换为阿里云镜像，pip 使用阿里云 PyPI 镜像
 - 安装 `build-essential`（`stringzilla` 等包需要 C 编译）
-- PaddleOCR 模型不在构建时预下载（服务器内存限制），首次运行时会自动拉取
-- 构建前确保 `data/md5.text` 文件存在（`touch` 即可），否则 Docker 会将其创建为目录
+- 安装 `libgl1`、`libglib2.0-0`、`libxcb1`（OpenCV/RapidOCR 运行时依赖）
+- 生产环境使用 `requirements-prod.txt`（不含 streamlit/pytest）
 - 容器内存限制 1GB（`docker-compose.yml` 中 `mem_limit: 1g`）
-- **pip 层缓存**：只要 `requirements.txt` 不变，pip 安装层永久缓存。不要主动运行 `docker builder prune`
+- **pip 层缓存**：只要 `requirements-prod.txt` 不变，pip 安装层永久缓存。不要主动运行 `docker builder prune`
 - **源码卷挂载**：`docker-compose.yml` 已将 Python 源码目录挂载进容器，配合 uvicorn `--reload`，代码改动无需重建镜像（仅重启 ~2 秒）
 
 ### 环境变量
 
-需要两个：`DASHSCOPE_API_KEY` 和 `AUTH_TOKEN`，存储在 `docker/.env`，docker-compose 自动读取。
+需要三个，存储在 `docker/.env`，docker-compose 自动读取：
+- `DASHSCOPE_API_KEY`：阿里云 DashScope API Key
+- `ADMIN_TOKEN`：管理员密码（完全访问所有功能）
+- `GUEST_TOKEN`：访客密码（功能一致，每小时 10 次 IP 限流，数据隔离）
 
 ### 访问地址
 

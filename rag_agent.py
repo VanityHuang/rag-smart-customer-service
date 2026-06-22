@@ -19,7 +19,8 @@ logger = logging.getLogger(__name__)
 
 
 class RagAgentService:
-    def __init__(self, vector_service: VectorStoreService = None):
+    def __init__(self, vector_service: VectorStoreService = None, role: str = "admin"):
+        self.role = role
         self.vector_service = vector_service or VectorStoreService(
             embedding=DashScopeEmbeddings(model=config.embedding_model_name)
         )
@@ -253,17 +254,17 @@ class RagAgentService:
     def _maybe_auto_title(self, session_id: str, first_message: str, history):
         """如果会话刚创建（metadata 中不存在或 title 为 '新对话'），用 LLM 生成标题"""
         from file_history_store import get_metadata_store
-        store = get_metadata_store()
+        store = get_metadata_store(self.role)
         meta = store.get_session(session_id)
         if meta is None or meta.get("title") == "新对话":
             title = self._generate_title(first_message)
-            touch_session_metadata(session_id, title=title)
+            touch_session_metadata(session_id, title=title, role=self.role)
         else:
-            touch_session_metadata(session_id)
+            touch_session_metadata(session_id, role=self.role)
 
     def invoke(self, message: str, session_id: str = "user_001") -> str:
         """处理用户消息并返回 Agent 回答"""
-        history = get_history(session_id)
+        history = get_history(session_id, self.role)
         user_message = HumanMessage(content=message)
 
         messages = [
@@ -288,7 +289,7 @@ class RagAgentService:
         1. Agent 循环（同步）：用 model_with_tools.invoke 检测 tool_calls
         2. 流式输出（异步）：用 chat_model.stream 逐 token 生成最终答案
         """
-        history = get_history(session_id)
+        history = get_history(session_id, self.role)
         user_message = HumanMessage(content=message)
 
         messages = [

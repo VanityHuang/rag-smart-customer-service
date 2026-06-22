@@ -17,7 +17,8 @@
 - **UI（生产）**: 静态 HTML/CSS/JS（nginx serving），marked.js Markdown 渲染，SSE 流式消费
 - **API**: FastAPI
 - **流式响应**: SSE（Server-Sent Events），nginx `proxy_buffering off`
-- **认证**: Bearer Token 单密码保护（通过 `AUTH_TOKEN` 环境变量配置，默认 `"guest"`）
+- **认证**: Bearer Token 双角色认证（`ADMIN_TOKEN` / `GUEST_TOKEN` 环境变量，密码只在 `.env` 中配置，Python 代码零硬编码）
+- **角色隔离**: admin / guest 功能完全一致，仅限流（guest 每小时 10 次）和数据隔离不同
 - **聊天历史**: 基于 JSON 文件存储 + `sessions_metadata.json` 会话元数据
 - **容器化**: Docker + docker-compose（Dockerfile 使用 `python:3.11-slim`，源码卷挂载 + `--reload` 热重载）
 
@@ -27,20 +28,20 @@
 |------|------|
 | `rag_agent.py` | **核心 Agent** — 自定义 Function Calling 循环，3 个工具（知识库搜索 / 联网搜索 / 计算器），对话历史管理；`stream()` 方法实现 SSE 流式生成；`_generate_title()` LLM 自动标题 |
 | `knowledge_base.py` | 知识库服务 — 文本分割、MD5 去重、嵌入向量化 + 存入 Chroma，支持多格式文档 |
-| `file_parser.py` | 多格式文档解析器 — TXT / MD / PDF（PyMuPDF）/ DOCX（python-docx）/ 图片 OCR（PaddleOCR，可切换 pytesseract） |
+| `file_parser.py` | 多格式文档解析器 — TXT / MD / PDF（PyMuPDF）/ DOCX（python-docx）/ 图片 OCR（RapidOCR，ONNX Runtime） |
 | `vector_stores.py` | Chroma 薄封装，提供 `get_retriever()` 和 `get_retriever_with_score()`（带相似度阈值检索） |
-| `config_data.py` | 所有配置常量（模型名称、分块参数、Agent 配置、API 配置、OCR 后端、auth_token） |
-| `file_history_store.py` | `FileChatMessageHistory`（LangChain 兼容）+ `SessionsMetadata`（会话元数据注册表，UTC 时区感知时间戳） |
+| `config_data.py` | 所有配置常量（模型名称、分块参数、Agent 配置、API 配置、双角色 token） |
+| `file_history_store.py` | `FileChatMessageHistory`（LangChain 兼容）+ `SessionsMetadata`（会话元数据注册表，角色化存储路径） |
 | `evaluation.py` | RAG 评估体系 — Hit Rate、MRR、检索延迟 |
 | `ui/` | Streamlit 界面 — `app_qa.py`（问答，支持 Direct/API 双模式）、`app_file_uploader.py`（知识库管理） |
-| `api/` | FastAPI 后端 — `server.py`（入口 + Auth 中间件）、`chat.py`（非流式/流式/历史/会话管理端点）、`knowledge_base.py`（上传/列表/删除） |
+| `api/` | FastAPI 后端 — `server.py`（入口 + Auth 中间件）、`chat.py`（角色化聊天端点）、`knowledge_base.py`（角色化 KB 管理）、`auth.py`（角色认证）、`rate_limit.py`（guest IP 限流）、`middleware.py`（认证中间件）、`deps.py`（角色服务工厂） |
 | `tests/` | 测试脚本 — `test_modules.py`（模块级，含 .md 解析 + 会话元数据测试）、`test_knowledge_base.py`（知识库 CRUD）、`test_api.py`（API 端到端），`data/`（测试用文档含 test_markdown.md） |
 | `docker/` | Docker 配置 — `Dockerfile`（apt 阿里云镜像 + build-essential）+ `docker-compose.yml`（127.0.0.1:8000 + 1GB 内存限制） |
 | `web/` | 生产环境静态前端 — `index.html`（聊天界面）、`upload.html`（知识库管理），部署时复制到 nginx serving 目录 |
 | `docs/` | 项目文档 — `diagrams/` 包含 4 张 Mermaid 架构图（架构总览/模块依赖/数据流/部署） |
 | `/etc/nginx/sites-available/<project>` | nginx 反代配置 — `/rag/api/` → Docker、`/rag/` → `web/` 静态文件 |
 | `/etc/systemd/system/rag-agent.service` | systemd 服务 — 管理 Docker 容器生命周期 |
-| `data/` | 运行时数据 — `chroma_db/`（向量库）、`chat_history/`（聊天记录 + `sessions_metadata.json` 会话注册表）、`md5.text`（MD5 去重） |
+| `data/` | 运行时数据 — `chroma_db/{admin,guest}/`（角色化向量库）、`chat_history/{admin,guest}/`（角色化聊天记录 + 元数据）、`md5_{admin,guest}.text`（角色化 MD5 去重）、`rate_limit.json`（guest 限流计数） |
 | `requirements.txt` | Python 依赖清单 |
 | `TESTING.md` | 7 层验证体系指南（从模块级到 Docker 全量测试） |
 | `pytest.ini` | Pytest 配置（`addopts = -v --tb=short`，定义 `external` 标记） |
@@ -69,19 +70,21 @@
 
 ## API 端点
 
-所有 API 端点需要 `Authorization: Bearer guest` 请求头。
+所有 API 端点需要 `Authorization: Bearer <password>` 请求头（密码在 `docker/.env` 中配置）。
+- **admin**（`admin2026`）：完全访问，不限次数
+- **guest**（`guest123`）：功能完全一致，每小时 10 次 IP 限流，数据与 admin 隔离
 
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| `POST` | `/api/chat` | 发送消息，返回 Agent 回复（非流式） |
-| `POST` | `/api/chat/stream` | 发送消息（SSE 流式，`text/event-stream`） |
-| `GET` | `/api/chat/history?session_id=` | 获取会话聊天历史 |
-| `GET` | `/api/chat/sessions` | 列出所有会话（按更新时间倒序） |
-| `PUT` | `/api/chat/sessions/{session_id}` | 重命名会话 |
-| `DELETE` | `/api/chat/sessions/{session_id}` | 删除会话（消息文件 + 元数据） |
-| `POST` | `/api/knowledge-base/upload` | 上传文档到知识库 |
-| `GET` | `/api/knowledge-base/documents` | 列出知识库所有文档 |
-| `DELETE` | `/api/knowledge-base/documents/{source}` | 删除指定来源的文档 |
+| 方法 | 路径 | 角色 | 说明 |
+|------|------|------|------|
+| `POST` | `/api/chat` | admin/guest | 发送消息，返回 Agent 回复（非流式） |
+| `POST` | `/api/chat/stream` | admin/guest | 发送消息（SSE 流式，`text/event-stream`） |
+| `GET` | `/api/chat/history?session_id=` | admin/guest | 获取会话聊天历史 |
+| `GET` | `/api/chat/sessions` | admin/guest | 列出所有会话（按更新时间倒序） |
+| `PUT` | `/api/chat/sessions/{session_id}` | admin/guest | 重命名会话 |
+| `DELETE` | `/api/chat/sessions/{session_id}` | admin/guest | 删除会话（消息文件 + 元数据） |
+| `POST` | `/api/knowledge-base/upload` | admin/guest | 上传文档到知识库 |
+| `GET` | `/api/knowledge-base/documents` | admin/guest | 列出知识库所有文档 |
+| `DELETE` | `/api/knowledge-base/documents/{source}` | admin/guest | 删除指定来源的文档 |
 
 ## 关键配置（`config_data.py`）
 
@@ -104,13 +107,14 @@ Agent：
 - 嵌入：`text-embedding-v4`
 - 对话：`qwen3-max`
 
-OCR（双后端可配置）：
-- `ocr_backend`（`"paddleocr"`）：OCR 后端 — `"paddleocr"` | `"pytesseract"`
-- `ocr_language`（`"ch"`）/ `pytesseract_language`（`"chi_sim+eng"`）：各自语言参数
-- `ocr_confidence_threshold`（0.5）：PaddleOCR 置信度阈值
+OCR：
+- `ocr_language`（`"ch"`）：RapidOCR 语言参数（支持中英文）
+- `ocr_confidence_threshold`（0.5）：RapidOCR 置信度阈值
 
 Auth：
-- `auth_token`（默认 `"guest"`，可通过 `AUTH_TOKEN` 环境变量覆盖）：API 认证共享密钥
+- `admin_token`（通过 `ADMIN_TOKEN` 环境变量配置）：管理员密码
+- `guest_token`（通过 `GUEST_TOKEN` 环境变量配置）：访客密码
+- `guest_daily_limit`（10）：访客每小时提问次数上限
 
 ## 常用命令
 
@@ -199,14 +203,17 @@ sudo docker compose up -d
 - Dockerfile 将 apt 源换为阿里云镜像（国内服务器加速）
 - pip 使用阿里云 PyPI 镜像（`-i https://mirrors.aliyun.com/pypi/simple/`）
 - 需要 `build-essential`（`stringzilla` 编译需要 gcc + libc6-dev）
-- PaddleOCR 模型**不在构建时预下载**（服务器内存不足导致 segfault），首次 OCR 调用时自动拉取
-- 构建前确保 `data/md5.text` 文件存在，否则 Docker 会创建同名目录
+- 需要 `libgl1`、`libglib2.0-0`、`libxcb1`（OpenCV/RapidOCR 运行时依赖）
+- 生产环境使用 `requirements-prod.txt`（不含 streamlit/pytest）
 - 容器内存限制 1GB（`docker-compose.yml` 中 `mem_limit: 1g`）
-- **pip 层永久缓存**：只要 `requirements.txt` 不变，pip 安装层永久缓存。不要手动 `docker builder prune`
+- **pip 层永久缓存**：只要 `requirements-prod.txt` 不变，pip 安装层永久缓存。不要手动 `docker builder prune`
 
 ### 环境变量
 
-需要两个：`DASHSCOPE_API_KEY` 和 `AUTH_TOKEN`，存储在 `docker/.env`，docker-compose 自动读取。
+需要三个，存储在 `docker/.env`，docker-compose 自动读取：
+- `DASHSCOPE_API_KEY`：阿里云 DashScope API Key
+- `ADMIN_TOKEN`：管理员密码（完全访问所有功能）
+- `GUEST_TOKEN`：访客密码（功能与 admin 一致，每小时 10 次 IP 限流，数据隔离）
 
 ### 访问地址
 

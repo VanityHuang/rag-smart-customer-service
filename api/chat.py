@@ -1,18 +1,17 @@
-"""聊天 API 路由"""
+"""聊天 API 路由 — 角色化版本"""
 import datetime
 import glob
 import json
 import os as _os
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
-from rag_agent import RagAgentService
 from file_history_store import get_history, get_metadata_store
+from api.deps import get_rag_service
+from api.rate_limit import check_rate_limit, get_client_ip, RATE_LIMIT_MESSAGE
 
 router = APIRouter()
-
-rag_service = RagAgentService()
 
 
 class ChatRequest(BaseModel):
@@ -26,9 +25,19 @@ class ChatResponse(BaseModel):
 
 
 @router.post("", response_model=ChatResponse)
-def chat(request: ChatRequest):
+def chat(request: ChatRequest, req: Request):
     """发送消息给 RAG Agent 并获取回答（非流式）"""
+    role = req.state.role
+
+    # guest 限流
+    if role == "guest":
+        ip = get_client_ip(req)
+        allowed, remaining = check_rate_limit(ip)
+        if not allowed:
+            raise HTTPException(status_code=429, detail=RATE_LIMIT_MESSAGE)
+
     try:
+        rag_service = get_rag_service(role)
         result = rag_service.invoke(request.message, request.session_id)
         return ChatResponse(response=result, session_id=request.session_id)
     except Exception as e:
@@ -36,8 +45,19 @@ def chat(request: ChatRequest):
 
 
 @router.post("/stream")
-def chat_stream(request: ChatRequest):
+def chat_stream(request: ChatRequest, req: Request):
     """发送消息并以 SSE 流式返回 Agent 回答"""
+    role = req.state.role
+
+    # guest 限流
+    if role == "guest":
+        ip = get_client_ip(req)
+        allowed, remaining = check_rate_limit(ip)
+        if not allowed:
+            raise HTTPException(status_code=429, detail=RATE_LIMIT_MESSAGE)
+
+    rag_service = get_rag_service(role)
+
     def generate():
         try:
             for token in rag_service.stream(request.message, request.session_id):
@@ -58,10 +78,11 @@ def chat_stream(request: ChatRequest):
 
 
 @router.get("/history")
-def get_chat_history(session_id: str):
+def get_chat_history(session_id: str, req: Request):
     """获取指定 session 的聊天历史（仅返回 human/ai 消息）"""
+    role = req.state.role
     try:
-        history = get_history(session_id)
+        history = get_history(session_id, role)
         messages = []
         for msg in history.messages:
             if msg.type == "human":
@@ -86,10 +107,12 @@ class SessionUpdateRequest(BaseModel):
     title: str
 
 
-def _scan_sessions_from_files():
+def _scan_sessions_from_files(role: str):
     """降级方案：扫描 chat_history 目录获取会话列表"""
-    storage = "./data/chat_history"
+    storage = f"./data/chat_history/{role}"
     results = []
+    if not _os.path.exists(storage):
+        return results
     for fpath in glob.glob(_os.path.join(storage, "*")):
         fname = _os.path.basename(fpath)
         if fname == "sessions_metadata.json":
@@ -108,22 +131,24 @@ def _scan_sessions_from_files():
 
 
 @router.get("/sessions", response_model=list[SessionItem])
-def list_sessions():
+def list_sessions(req: Request):
     """列出所有会话，按更新时间倒序"""
-    store = get_metadata_store()
+    role = req.state.role
+    store = get_metadata_store(role)
     try:
         items = store.list_sessions()
         if not items:
-            items = _scan_sessions_from_files()
+            items = _scan_sessions_from_files(role)
         return items
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.put("/sessions/{session_id}")
-def update_session(session_id: str, req: SessionUpdateRequest):
+def update_session(session_id: str, req: SessionUpdateRequest, request: Request):
     """重命名会话"""
-    store = get_metadata_store()
+    role = request.state.role
+    store = get_metadata_store(role)
     if not store.session_exists(session_id):
         # 也许是旧会话，先注册
         store.create_session(session_id)
@@ -135,10 +160,11 @@ def update_session(session_id: str, req: SessionUpdateRequest):
 
 
 @router.delete("/sessions/{session_id}")
-def delete_session(session_id: str):
+def delete_session(session_id: str, req: Request):
     """删除会话（移除消息文件和元数据）"""
-    store = get_metadata_store()
-    file_path = _os.path.join("./data/chat_history", session_id)
+    role = req.state.role
+    store = get_metadata_store(role)
+    file_path = _os.path.join(f"./data/chat_history/{role}", session_id)
     if _os.path.exists(file_path):
         _os.remove(file_path)
     store.delete_session(session_id)

@@ -10,8 +10,10 @@ from langchain_core.messages import message_to_dict, BaseMessage, messages_from_
 STORAGE_PATH = "./data/chat_history"
 
 
-def get_history(session_id):
-    return FileChatMessageHistory(session_id, STORAGE_PATH)
+def get_history(session_id, role="admin"):
+    """获取指定角色的聊天历史"""
+    storage = f"./data/chat_history/{role}"
+    return FileChatMessageHistory(session_id, storage)
 
 
 # ── 会话元数据注册表 ──
@@ -90,21 +92,22 @@ class SessionsMetadata:
         return session_id in self._read()
 
 
-_metadata_store = None
+_metadata_store = {}
 
 
-def get_metadata_store() -> SessionsMetadata:
-    global _metadata_store
-    if _metadata_store is None:
-        _metadata_store = SessionsMetadata()
-    return _metadata_store
+def get_metadata_store(role="admin") -> SessionsMetadata:
+    """获取指定角色的会话元数据注册表"""
+    if role not in _metadata_store:
+        storage = f"./data/chat_history/{role}"
+        _metadata_store[role] = SessionsMetadata(storage)
+    return _metadata_store[role]
 
 
-def touch_session_metadata(session_id: str, first_user_message: str = None, title: str = None):
+def touch_session_metadata(session_id: str, first_user_message: str = None, title: str = None, role="admin"):
     """更新会话元数据。首次消息时注册，每次更新 updated_at。
     title 参数由调用方（LLM 生成）传入。
     """
-    store = get_metadata_store()
+    store = get_metadata_store(role)
     now = datetime.datetime.now(datetime.timezone.utc).isoformat()
 
     if not store.session_exists(session_id):

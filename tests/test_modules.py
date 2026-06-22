@@ -81,47 +81,20 @@ def test_md_parse():
 
 
 def test_image_parse():
-    """1.6 图片 OCR 文件解析（默认后端）"""
+    """1.6 图片 OCR 文件解析"""
     img_path = DATA_DIR / "test_ocr.png"
     if not img_path.exists():
         pytest.skip("test_ocr.png 不存在")
 
-    from file_parser import parse_file, _parse_image_paddleocr, _parse_image_pytesseract
-    import config_data as config
+    from file_parser import parse_file
 
-    # 测试默认调度路径
     try:
         text = parse_file(str(img_path))
         assert len(text) > 0
         assert any(ord(c) > 127 or c.isalpha() for c in text), \
             "OCR 输出应包含可识别的文本"
-    except (RuntimeError, ImportError) as e:
-        if "paddlepaddle" in str(e) or "paddle" in str(e).lower():
-            pytest.skip(f"PaddleOCR 不可用: {e}")
-        raise
-    except Exception as e:
-        # pytesseract: 缺少系统 tesseract 二进制也会失败
-        if "tesseract" in str(e).lower():
-            pytest.skip(f"pytesseract 不可用: {e}")
-        raise
-
-    # 尝试 PaddleOCR 后端（如果当前环境支持）
-    try:
-        paddle_text = _parse_image_paddleocr(str(img_path))
-        assert isinstance(paddle_text, str)
-    except (RuntimeError, ImportError) as e:
-        # PaddleOCR 可能缺少 paddlepaddle 或 Python 版本过高
-        print(f"PaddleOCR 后端跳过: {e}")
-    else:
-        assert len(paddle_text) > 0
-
-    # 尝试 pytesseract 备胎后端（如果系统安装了 tesseract 二进制）
-    try:
-        tesseract_text = _parse_image_pytesseract(str(img_path))
-        assert isinstance(tesseract_text, str)
-    except Exception as e:
-        # pytesseract 可能缺少系统级 tesseract 二进制
-        print(f"pytesseract 后端跳过: {e}")
+    except ImportError as e:
+        pytest.skip(f"RapidOCR 不可用: {e}")
 
 
 def test_sessions_metadata():

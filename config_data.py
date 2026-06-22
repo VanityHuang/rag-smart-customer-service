@@ -42,10 +42,10 @@ api_host = "0.0.0.0"
 api_port = 8000
 
 # OCR Configuration
-ocr_backend = "paddleocr"              # "paddleocr" | "pytesseract"（当前环境 Python 3.12 + PaddlePaddle 已安装）
-ocr_language = "ch"                      # PaddleOCR lang 参数（"ch" 支持中英文，需 Python ≤ 3.12）
-pytesseract_language = "chi_sim+eng"     # pytesseract lang 参数
+ocr_language = "ch"                      # PaddleOCR lang 参数（"ch" 支持中英文）
 ocr_confidence_threshold = 0.5           # PaddleOCR 置信度阈值，低于该值的结果将被丢弃
 
-# Auth
-auth_token = os.environ.get("AUTH_TOKEN", "guest")
+# Auth — 双角色，密码只在 .env 中配置，Python 代码零硬编码
+admin_token = os.environ["ADMIN_TOKEN"]   # 必须在 .env 中配置，否则启动失败
+guest_token = os.environ["GUEST_TOKEN"]   # 必须在 .env 中配置，否则启动失败
+guest_daily_limit = 10                     # guest 每日提问次数上限

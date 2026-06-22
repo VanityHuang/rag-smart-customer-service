@@ -64,68 +64,20 @@ def _parse_docx(path: str) -> str:
 
 
 def _parse_image(path: str) -> str:
+    """使用 RapidOCR（ONNX Runtime）识别图片文字。"""
     import config_data as config
+    from rapidocr_onnxruntime import RapidOCR
 
-    backend = config.ocr_backend
-    if backend == "paddleocr":
-        return _parse_image_paddleocr(path)
-    elif backend == "pytesseract":
-        return _parse_image_pytesseract(path)
-    else:
-        raise ValueError(
-            f"未知的 OCR 后端 '{backend}'。支持的选项: 'paddleocr', 'pytesseract'。"
-        )
-
-
-# --- PaddleOCR 后端 ---
-
-_ocr_instance = None
-
-
-def _get_paddleocr():
-    """懒加载 PaddleOCR 单例，首次调用后缓存复用。"""
-    global _ocr_instance
-    if _ocr_instance is None:
-        from paddleocr import PaddleOCR
-        import config_data as config
-        _ocr_instance = PaddleOCR(
-            use_angle_cls=True,
-            lang=config.ocr_language,
-            show_log=False,         # 抑制框架日志
-        )
-    return _ocr_instance
-
-
-def _parse_image_paddleocr(path: str) -> str:
-    """使用 PaddleOCR 后端识别图片文字。
-
-    PaddleOCR 2.x 返回格式: [[[bbox, (text, confidence)], ...], ...]
-    按置信度阈值 (config.ocr_confidence_threshold) 过滤低质量结果。
-    """
-    import config_data as config
-    ocr = _get_paddleocr()
-    result = ocr.ocr(path, cls=True)
-    if not result or not result[0]:
+    ocr = RapidOCR()
+    result, _ = ocr(path)
+    if not result:
         return ""
 
     lines = []
-    for detection in result[0]:
-        # detection: [bbox, (text, confidence)]
-        _, (text, confidence) = detection
+    for item in result:
+        # RapidOCR 返回: [bbox, text, confidence]
+        _, text, confidence = item
         if confidence >= config.ocr_confidence_threshold:
             lines.append(text)
 
     return "\n".join(lines)
-
-
-def _parse_image_pytesseract(path: str) -> str:
-    """使用 pytesseract 后端识别图片文字（备胎方案）。"""
-    from PIL import Image
-    import pytesseract
-    import config_data as config
-
-    image = Image.open(path)
-    text = pytesseract.image_to_string(image, lang=config.pytesseract_language)
-    if not text.strip():
-        text = pytesseract.image_to_string(image, lang="eng")
-    return text

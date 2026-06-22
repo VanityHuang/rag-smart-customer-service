@@ -10,12 +10,13 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from datetime import datetime
 
 
-def check_md5(md5_str: str):
+def check_md5(md5_str: str, md5_path: str = None):
     """检查内容是否已处理过（按 MD5 去重）"""
-    if not os.path.exists(config.md5_path):
-        open(config.md5_path, 'w', encoding='utf-8').close()
+    md5_path = md5_path or config.md5_path
+    if not os.path.exists(md5_path):
+        open(md5_path, 'w', encoding='utf-8').close()
         return False
-    for line in open(config.md5_path, 'r', encoding='utf-8').readlines():
+    for line in open(md5_path, 'r', encoding='utf-8').readlines():
         line = line.strip()
         # 兼容新旧格式: md5|source 或 md5
         stored_md5 = line.split("|")[0]
@@ -24,21 +25,23 @@ def check_md5(md5_str: str):
     return False
 
 
-def save_md5(md5_str: str, source: str = ""):
+def save_md5(md5_str: str, source: str = "", md5_path: str = None):
     """记录 MD5，关联到来源文档"""
-    with open(config.md5_path, 'a', encoding='utf-8') as f:
+    md5_path = md5_path or config.md5_path
+    with open(md5_path, 'a', encoding='utf-8') as f:
         line = f"{md5_str}|{source}" if source else md5_str
         f.write(line + '\n')
 
 
-def clear_md5_by_source(source: str):
+def clear_md5_by_source(source: str, md5_path: str = None):
     """删除指定来源文档关联的所有 MD5 记录"""
-    if not os.path.exists(config.md5_path):
+    md5_path = md5_path or config.md5_path
+    if not os.path.exists(md5_path):
         return
-    with open(config.md5_path, 'r', encoding='utf-8') as f:
+    with open(md5_path, 'r', encoding='utf-8') as f:
         lines = f.readlines()
     remaining = [l for l in lines if not l.strip().endswith(f"|{source}")]
-    with open(config.md5_path, 'w', encoding='utf-8') as f:
+    with open(md5_path, 'w', encoding='utf-8') as f:
         f.writelines(remaining)
 
 
@@ -52,13 +55,17 @@ def get_string_md5(input_str: str, encoding='utf-8'):
 
 
 class KnowledgeBaseService(object):
-    def __init__(self):
-        os.makedirs(config.persist_directory, exist_ok=True)
+    def __init__(self, persist_directory=None, md5_path=None, collection_name=None):
+        self.persist_directory = persist_directory or config.persist_directory
+        self.md5_path = md5_path or config.md5_path
+        self.collection_name = collection_name or config.collection_name
+
+        os.makedirs(self.persist_directory, exist_ok=True)
 
         self.chroma = Chroma(
-            collection_name=config.collection_name,
+            collection_name=self.collection_name,
             embedding_function=DashScopeEmbeddings(model=config.embedding_model_name),
-            persist_directory=config.persist_directory,
+            persist_directory=self.persist_directory,
         )
 
         self.spliter = RecursiveCharacterTextSplitter(
@@ -72,7 +79,7 @@ class KnowledgeBaseService(object):
         """将传入的字符串进行向量化, 存入向量数据库中"""
         md5_hex = get_string_md5(data)
 
-        if check_md5(md5_hex):
+        if check_md5(md5_hex, self.md5_path):
             return "[跳过]内容已经存在知识库中"
 
         if len(data) > config.min_split_char_number:
@@ -91,7 +98,7 @@ class KnowledgeBaseService(object):
             metadatas=[meta for _ in knowledge_chunks],
         )
 
-        save_md5(md5_hex, filename)
+        save_md5(md5_hex, filename, md5_path=self.md5_path)
 
         return f"[成功]内容已经成功载入向量库: {filename}"
 
@@ -129,7 +136,7 @@ class KnowledgeBaseService(object):
                 ids_to_delete.append(all_data["ids"][i])
         if ids_to_delete:
             self.chroma.delete(ids=ids_to_delete)
-            clear_md5_by_source(source)
+            clear_md5_by_source(source, self.md5_path)
             return True
         return False
 

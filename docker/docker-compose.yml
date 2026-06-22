@@ -17,10 +17,13 @@ services:
       # ── 运行时数据（持久化）──
       - ../data/chroma_db:/app/data/chroma_db
       - ../data/chat_history:/app/data/chat_history
-      - ../data/md5.text:/app/data/md5.text
+      - ../data/md5_admin.text:/app/data/md5_admin.text
+      - ../data/md5_guest.text:/app/data/md5_guest.text
+      - ../data/rate_limit.json:/app/data/rate_limit.json
     environment:
       - DASHSCOPE_API_KEY=${DASHSCOPE_API_KEY}
-      - AUTH_TOKEN=${AUTH_TOKEN}
+      - ADMIN_TOKEN=${ADMIN_TOKEN}
+      - GUEST_TOKEN=${GUEST_TOKEN}
     command: uvicorn api.server:app --host 0.0.0.0 --port 8000 --reload
     mem_limit: 1g
     user: "1000:1000"

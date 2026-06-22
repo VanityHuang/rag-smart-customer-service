@@ -6,16 +6,16 @@ WORKDIR /app
 RUN sed -i 's|http://deb.debian.org/debian|https://mirrors.aliyun.com/debian|g' /etc/apt/sources.list.d/debian.sources && \
     sed -i 's|http://deb.debian.org/debian-security|https://mirrors.aliyun.com/debian-security|g' /etc/apt/sources.list.d/debian.sources
 
-# 安装 tesseract-ocr（用于图片文字识别）和编译工具（stringzilla 等包需要）
+# 安装编译工具（stringzilla 等包需要）和 OpenCV 运行时依赖
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    tesseract-ocr \
-    tesseract-ocr-chi-sim \
-    tesseract-ocr-eng \
     build-essential \
+    libgl1 \
+    libglib2.0-0 \
+    libxcb1 \
     && rm -rf /var/lib/apt/lists/*
 
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt -i https://mirrors.aliyun.com/pypi/simple/
+COPY requirements-prod.txt .
+RUN pip install --no-cache-dir -r requirements-prod.txt -i https://mirrors.aliyun.com/pypi/simple/
 
 # 预下载 PaddleOCR 模型（避免运行时首次调用出现下载延迟）
 # 注：服务器内存不足导致构建时 segfault，取消预下载，首次运行时会自动拉取
