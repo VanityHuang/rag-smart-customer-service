@@ -6,6 +6,7 @@
 
 ```bash
 echo $DASHSCOPE_API_KEY   # 必须设置
+# 或写入 ./docker/.env
 ```
 
 ---

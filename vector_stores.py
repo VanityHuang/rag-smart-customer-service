@@ -15,6 +15,7 @@ class VectorStoreService(object):
             collection_name=collection_name or config.collection_name,
             embedding_function=self.embedding,
             persist_directory=persist_directory or config.persist_directory,
+            collection_metadata={"hnsw:space": "cosine"},
         )
 
     def get_retriever(self, k: int = None):

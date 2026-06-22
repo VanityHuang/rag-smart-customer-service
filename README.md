@@ -11,8 +11,7 @@
 | 嵌入模型 | `text-embedding-v4`（阿里云 DashScope） |
 | 向量数据库 | Chroma（本地持久化） |
 | 文档解析 | PyMuPDF（PDF）、python-docx（DOCX）、RapidOCR（图片 OCR，ONNX Runtime） |
-| 前端（开发） | Streamlit（问答界面 + 知识库管理） |
-| 前端（生产） | 静态 HTML/CSS/JS（nginx 直接 serving） |
+| 前端 | 静态 HTML/CSS/JS（nginx 直接 serving） |
 | API | FastAPI + uvicorn |
 | 流式响应 | SSE（Server-Sent Events） |
 | Markdown 渲染 | marked.js + DOMPurify（前端） |
@@ -74,9 +73,6 @@ python -m uvicorn api.server:app --reload
 
 ```
 RAG/
-├── ui/                    # Streamlit 界面（开发用）
-│   ├── app_qa.py          # 问答聊天界面
-│   └── app_file_uploader.py  # 知识库管理界面
 ├── api/                   # FastAPI 后端
 │   ├── server.py          # 入口（含 Auth 中间件）
 │   ├── chat.py            # 聊天 API（含流式 + 历史端点 + 输入校验）

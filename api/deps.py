@@ -13,13 +13,13 @@ _ROLE_CONFIG = {
     "admin": {
         "collection_name": "rag_admin",
         "persist_directory": "./data/chroma_db/admin",
-        "md5_path": "./data/md5_admin.text",
+        "md5_path": "./data/md5_admin.txt",
         "chat_history": "./data/chat_history/admin",
     },
     "guest": {
         "collection_name": "rag_guest",
         "persist_directory": "./data/chroma_db/guest",
-        "md5_path": "./data/md5_guest.text",
+        "md5_path": "./data/md5_guest.txt",
         "chat_history": "./data/chat_history/guest",
     },
 }

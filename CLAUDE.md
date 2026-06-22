@@ -33,7 +33,6 @@
 | `config_data.py` | 所有配置常量（模型名称、分块参数、Agent 配置、API 配置、双角色 token） |
 | `file_history_store.py` | `FileChatMessageHistory`（LangChain 兼容）+ `SessionsMetadata`（会话元数据注册表，角色化存储路径） |
 | `evaluation.py` | RAG 评估体系 — Hit Rate、MRR、检索延迟 |
-| `ui/` | Streamlit 界面 — `app_qa.py`（问答，支持 Direct/API 双模式）、`app_file_uploader.py`（知识库管理） |
 | `api/` | FastAPI 后端 — `server.py`（入口 + Auth 中间件）、`chat.py`（角色化聊天端点 + 输入内容前置拦截）、`knowledge_base.py`（角色化 KB 管理）、`auth.py`（角色认证）、`rate_limit.py`（guest IP 限流）、`middleware.py`（认证中间件）、`deps.py`（角色服务工厂） |
 | `tests/` | 测试脚本 — `test_api.py`（API 冒烟，覆盖全部端点 + 认证 + 限流）、`locustfile.py`（Locust 压测）、`test_rag_precision_grid.py`（RAG 参数遍历）、`prod_verify.sh`（生产环境巡检）、`data/`（测试用文档） |
 | `bug_and_fix.md` | Bug 修复记录（Token 截断 bug、Agent 空回答 bug） |
@@ -42,7 +41,7 @@
 | `docs/` | 项目文档 — `diagrams/` 包含 4 张 Mermaid 架构图（架构总览/模块依赖/数据流/部署） |
 | `/etc/nginx/sites-available/<project>` | nginx 反代配置 — `/rag/api/` → Docker、`/rag/` → `web/` 静态文件 |
 | `/etc/systemd/system/rag-agent.service` | systemd 服务 — 管理 Docker 容器生命周期 |
-| `data/` | 运行时数据 — `chroma_db/{admin,guest}/`（角色化向量库）、`chat_history/{admin,guest}/`（角色化聊天记录 + 元数据）、`md5_{admin,guest}.text`（角色化 MD5 去重）、`rate_limit.json`（guest 限流计数） |
+| `data/` | 运行时数据 — `chroma_db/{admin,guest}/`（角色化向量库）、`chat_history/{admin,guest}/`（角色化聊天记录 + 元数据）、`md5_{admin,guest}.txt`（角色化 MD5 去重）、`rate_limit.json`（guest 限流计数） |
 | `requirements.txt` | Python 依赖清单 |
 | `TESTING.md` | 6 层结果类测试体系指南（API 冒烟 / Docker 构建 / RAG 评估 / 压测 / 参数遍历 / 生产验证） |
 | `pytest.ini` | Pytest 配置（`addopts = -v --tb=short`，定义 `external` 标记） |

@@ -81,21 +81,44 @@ class RagAgentService:
         def knowledge_base_search(query: str) -> str:
             """在本地知识库中搜索相关信息。当用户询问关于已有文档、产品知识、FAQ等内容时，优先使用此工具。"""
             try:
-                retriever = vector_service.get_retriever()
-                docs = retriever.invoke(query)
-                if not docs:
+                # 相似度搜索（带分数）
+                results = vector_service.vector_store.similarity_search_with_score(
+                    query, k=config.retriever_k
+                )
+                if not results:
                     return "【知识库】未找到相关信息。"
+
+                # 按分数分层（余弦距离，越小越相似）
+                high_docs = []   # 距离 < 0.2（相似度 > 0.8）：高分命中
+                mid_docs = []    # 距离 0.2~0.5（相似度 0.5~0.8）：中分模糊
+                for doc, score in results:
+                    if score < config.score_high:
+                        high_docs.append(doc)
+                    elif score < config.score_low:
+                        mid_docs.append(doc)
+                    # >=1.5 距离太远，丢弃
+
+                # 组装知识库结果
                 parts = []
-                for doc in docs:
+                for doc in high_docs + mid_docs:
                     source = doc.metadata.get("source", "未知来源")
+                    score_val = round(1 - doc.metadata.get("score", 0), 2) if "score" in doc.metadata else "?"
                     parts.append(f"[来源: {source}]\n{doc.page_content}")
-                return "\n\n".join(parts)
+
+                kb_result = "\n\n".join(parts) if parts else ""
+
+                # 中分模糊 → 触发联网搜索补充
+                if mid_docs and not high_docs:
+                    web_results = _web_search_impl(query)
+                    if web_results:
+                        kb_result += f"\n\n【联网搜索补充】\n{web_results}"
+
+                return kb_result if kb_result else "【知识库】未找到相关信息。"
             except Exception as e:
                 return f"【知识库】搜索出错: {str(e)}"
 
-        @tool
-        def web_search(query: str) -> str:
-            """从互联网搜索最新信息。当知识库中没有相关信息，或需要查询实时信息（新闻、天气、最新动态）时使用此工具。"""
+        def _web_search_impl(query: str) -> str:
+            """联网搜索内部实现（供 knowledge_base_search 和 web_search 共用）"""
             import requests
             from lxml import html
 
@@ -150,13 +173,11 @@ class RagAgentService:
                             continue
                         title = title_el[0].text_content().strip()
                         url = title_el[0].get("href", "")
-                        # 摘要
                         snippet_el = div.xpath(
                             ".//*[contains(@class, 'c-abstract')]"
                             "|.//*[contains(@class, 'c-span-last')]"
                         )
                         snippet = snippet_el[0].text_content().strip() if snippet_el else ""
-                        # 来源
                         source_el = div.xpath(".//*[contains(@class, 'news-source')]")
                         source = source_el[0].text_content().strip() if source_el else ""
                         entry = f"[{title}]({url})\n{snippet}"
@@ -168,19 +189,20 @@ class RagAgentService:
                 return results
 
             try:
-                # 1) 先试百度新闻（中文新闻覆盖更好）
                 results = _baidu_news_search(query)
                 if results:
                     return "\n\n".join(results)
-
-                # 2) 百度无结果 → Bing 通用搜索
                 results = _bing_search(query)
                 if results:
                     return "\n\n".join(results)
-
                 return "【网络搜索】未找到相关结果。"
             except Exception as e:
                 return f"【网络搜索】失败: {str(e)}"
+
+        @tool
+        def web_search(query: str) -> str:
+            """从互联网搜索最新信息。当知识库中没有相关信息，或需要查询实时信息（新闻、天气、最新动态）时使用此工具。"""
+            return _web_search_impl(query)
 
         @tool
         def calculator(expression: str) -> str:

@@ -17,8 +17,8 @@ services:
       # ── 运行时数据（持久化）──
       - ../data/chroma_db:/app/data/chroma_db
       - ../data/chat_history:/app/data/chat_history
-      - ../data/md5_admin.text:/app/data/md5_admin.text
-      - ../data/md5_guest.text:/app/data/md5_guest.text
+      - ../data/md5_admin.txt:/app/data/md5_admin.txt
+      - ../data/md5_guest.txt:/app/data/md5_guest.txt
       - ../data/rate_limit.json:/app/data/rate_limit.json
     environment:
       - DASHSCOPE_API_KEY=${DASHSCOPE_API_KEY}
