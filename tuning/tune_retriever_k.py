@@ -558,13 +558,19 @@ def main():
                 "best_k": best["k"],
             }
 
-    # 保存报告
+    # 保存报告（分开存储）
     report_dir = Path(__file__).parent / "results"
     report_dir.mkdir(exist_ok=True)
-    report_path = report_dir / "retriever_k_tuning_report.json"
-    with open(report_path, "w", encoding="utf-8") as f:
-        json.dump(report, f, ensure_ascii=False, indent=2, default=str)
-    print(f"\n📊 报告已保存: {report_path}")
+    if report.get("phase_offline"):
+        path = report_dir / "retriever_k_offline_report.json"
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(report["phase_offline"], f, ensure_ascii=False, indent=2, default=str)
+        print(f"\n📊 离线报告已保存: {path}")
+    if report.get("phase_online"):
+        path = report_dir / "retriever_k_online_report.json"
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(report["phase_online"], f, ensure_ascii=False, indent=2, default=str)
+        print(f"\n📊 在线报告已保存: {path}")
 
 
 if __name__ == "__main__":
