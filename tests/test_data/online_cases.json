@@ -1,0 +1,83 @@
+[
+  {
+    "category": "T1",
+    "category_name": "内部知识型",
+    "description": "验证模型没有把内部私密问题乱发到互联网",
+    "expected_tools": ["knowledge_base_search"],
+    "pass_criteria": { "web_search_misroute": "< 5%" },
+    "cases": [
+      {"question": "鸭鸭科技的外部协作者能看通讯录吗"},
+      {"question": "鸭鸭科技提供哪三大核心产品线"},
+      {"question": "d1.small 实例的月费是多少"},
+      {"question": "免费试用期是多少天"},
+      {"question": "技术支持热线电话是多少"},
+      {"question": "数据存储在阿里云哪个区域"},
+      {"question": "忘记密码后重置链接有效期是多久"},
+      {"question": "账号注销冷静期是多少天"},
+      {"question": "SSD云盘的IOPS是多少"},
+      {"question": "超高IOPS盘的吞吐量是多少"},
+      {"question": "对象存储中归档存储的单价是多少"},
+      {"question": "DDoS高防最高防护能力是多少Gbps"},
+      {"question": "旗舰版技术支持的响应时间是多少"},
+      {"question": "内存型实例m1.large的内存是多少"},
+      {"question": "高效云盘的容量范围是多少"}
+    ]
+  },
+  {
+    "category": "T2",
+    "category_name": "实时信息型",
+    "description": "验证时效性问题的直连路由是否生效",
+    "expected_tools": ["web_search"],
+    "pass_criteria": { "web_search_miss": "0%" },
+    "cases": [
+      {"question": "今天深圳天气怎么样"},
+      {"question": "最新人民币兑美元汇率"},
+      {"question": "今天有什么新闻"},
+      {"question": "最近有什么科技资讯"},
+      {"question": "阿里巴巴最新股价"},
+      {"question": "现在黄金价格多少"},
+      {"question": "北京今天限号多少"},
+      {"question": "五一放假安排"},
+      {"question": "A股今天走势如何"},
+      {"question": "今天有什么电影上映"}
+    ]
+  },
+  {
+    "category": "T3",
+    "category_name": "模糊通用型",
+    "description": "验证 RAG 优先、联网兜底的优先级逻辑",
+    "expected_tools": ["knowledge_base_search", "web_search"],
+    "pass_criteria": { "always_call_kb_first": "应优先调知识库" },
+    "cases": [
+      {"question": "什么是人工智能"},
+      {"question": "如何提高团队效率"},
+      {"question": "云计算有哪些优势"},
+      {"question": "什么是数据库索引"},
+      {"question": "如何学习编程"},
+      {"question": "HTTP和HTTPS有什么区别"},
+      {"question": "什么是微服务架构"},
+      {"question": "项目管理有哪些方法论"},
+      {"question": "什么是区块链"},
+      {"question": "企业数字化转型怎么做"}
+    ]
+  },
+  {
+    "category": "T4",
+    "category_name": "边界外/拒答型",
+    "description": "验证护栏机制，防止乱调工具和浪费 Token",
+    "expected_tools": [],
+    "pass_criteria": { "tool_misroute": "0%", "verbose_refusal": "0%" },
+    "cases": [
+      {"question": "帮我写一份年报"},
+      {"question": "啊吧啊吧"},
+      {"question": "帮我发一封邮件给张三"},
+      {"question": "帮我下单买一台iPhone"},
+      {"question": "帮我订机票去北京"},
+      {"question": "唱歌给我听"},
+      {"question": "哈哈哈哈哈"},
+      {"question": "帮我计算公司全年利润"},
+      {"question": "帮我把这份文档翻译成英文"},
+      {"question": "帮我写一篇5000字的论文"}
+    ]
+  }
+]

@@ -35,8 +35,10 @@ class RagAgentService:
         self.tools = self._create_tools()
         self.tool_map = {t.name: t for t in self.tools}
         self.model_with_tools = self.chat_model.bind_tools(self.tools)
-        # Token 用量追踪（每次请求重置）
+        # Token 用量追踪 + 工具调用追踪（每次请求重置）
         self._total_usage = {"input_tokens": 0, "output_tokens": 0}
+        self._had_tool_calls = False
+        self._tools_called = set()
 
     def _track_usage(self, response):
         """累加 LLM 调用的 token 用量"""
@@ -62,6 +64,16 @@ class RagAgentService:
     def token_usage(self) -> dict:
         """返回本次请求的 token 用量明细"""
         return dict(self._total_usage)
+
+    @property
+    def had_tool_calls(self) -> bool:
+        """上次请求是否调用了工具"""
+        return self._had_tool_calls
+
+    @property
+    def tools_called(self) -> set:
+        """上次请求调用了哪些工具"""
+        return set(self._tools_called)
 
     def _truncate_history(self, history_messages: list) -> list:
         """按轮次截断历史消息，保留最近 MAX_HISTORY_ROUNDS 轮对话"""
@@ -268,12 +280,14 @@ class RagAgentService:
             if not response.tool_calls:
                 return response  # 最终回答（包括拒答）
 
+            self._had_tool_calls = True
             # 追加 AI 的工具调用消息到历史
             messages.append(response)
 
             # 执行每个工具调用
             for tc in response.tool_calls:
                 tool_name = tc["name"]
+                self._tools_called.add(tool_name)
                 tool_args = tc["args"]
                 tool_id = tc["id"]
 
@@ -328,6 +342,8 @@ class RagAgentService:
     def invoke(self, message: str, session_id: str = "user_001") -> str:
         """处理用户消息并返回 Agent 回答"""
         self._total_usage = {"input_tokens": 0, "output_tokens": 0}
+        self._had_tool_calls = False
+        self._tools_called = set()
         history = get_history(session_id, self.role)
         user_message = HumanMessage(content=message)
 
@@ -358,6 +374,8 @@ class RagAgentService:
         2. 流式输出（异步）：用 chat_model.stream 逐 token 生成最终答案
         """
         self._total_usage = {"input_tokens": 0, "output_tokens": 0}
+        self._had_tool_calls = False
+        self._tools_called = set()
         history = get_history(session_id, self.role)
         user_message = HumanMessage(content=message)
 
@@ -384,11 +402,13 @@ class RagAgentService:
             if not response.tool_calls:
                 break
 
+            self._had_tool_calls = True
             # 有工具调用：追加响应和工具结果，继续循环
             messages.append(response)
 
             for tc in response.tool_calls:
                 tool_name = tc["name"]
+                self._tools_called.add(tool_name)
                 tool_args = tc["args"]
                 tool_id = tc["id"]
 
