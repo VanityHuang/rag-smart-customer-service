@@ -50,22 +50,42 @@ class RagAgentService:
         self._tools_called = set()
 
     def _track_usage(self, response):
-        """累加 LLM 调用的 token 用量"""
+        """累加 LLM 调用的 token 用量（兼容 ChatTongyi / ChatOpenAI）"""
+        # 1. usage_metadata 属性（最新 langchain）
         usage = getattr(response, "usage_metadata", None)
         if usage:
             inp = getattr(usage, "input_tokens", 0) or 0
             out = getattr(usage, "output_tokens", 0) or 0
-            self._total_usage["input_tokens"] += inp
-            self._total_usage["output_tokens"] += out
-            return
+            if inp or out:
+                self._total_usage["input_tokens"] += inp
+                self._total_usage["output_tokens"] += out
+                return
 
-        # 兼容：尝试从 response_metadata 中提取（部分模型提供商）
+        # 2. response_metadata 中的 usage（OpenAI / DashScope 兼容接口）
         meta = getattr(response, "response_metadata", None)
         if meta and isinstance(meta, dict):
-            usage_info = meta.get("usage") or meta.get("token_usage") or {}
-            self._total_usage["input_tokens"] += usage_info.get("prompt_tokens", 0) or usage_info.get("input_tokens", 0)
-            self._total_usage["output_tokens"] += usage_info.get("completion_tokens", 0) or usage_info.get("output_tokens", 0)
-            return
+            # 不同的 API 提供商字段名不同，全部尝试
+            for key in ("usage", "token_usage"):
+                info = meta.get(key, {})
+                if isinstance(info, dict):
+                    inp = info.get("prompt_tokens", 0) or info.get("input_tokens", 0) or 0
+                    out = info.get("completion_tokens", 0) or info.get("output_tokens", 0) or 0
+                    if inp or out:
+                        self._total_usage["input_tokens"] += inp
+                        self._total_usage["output_tokens"] += out
+                        return
+
+        # 3. additional_kwargs（部分旧版兼容接口）
+        kwargs = getattr(response, "additional_kwargs", None)
+        if kwargs and isinstance(kwargs, dict):
+            info = kwargs.get("usage", {}) or kwargs.get("token_usage", {})
+            if isinstance(info, dict):
+                inp = info.get("prompt_tokens", 0) or info.get("input_tokens", 0) or 0
+                out = info.get("completion_tokens", 0) or info.get("output_tokens", 0) or 0
+                if inp or out:
+                    self._total_usage["input_tokens"] += inp
+                    self._total_usage["output_tokens"] += out
+                    return
 
         logger.debug(f"_track_usage: 无法提取 token 用量, response 类型={type(response).__name__}")
 
