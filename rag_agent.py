@@ -5,7 +5,6 @@ RAG Agent Service — 基于 Function Calling 的自定义 Agent 循环
 import logging
 
 from langchain_openai import ChatOpenAI
-from langchain_community.embeddings import DashScopeEmbeddings
 from langchain_core.messages import (
     AIMessage, HumanMessage, SystemMessage, ToolMessage
 )
