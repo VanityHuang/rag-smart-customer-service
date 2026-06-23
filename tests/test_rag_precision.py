@@ -158,6 +158,9 @@ def _evaluate_questions(questions: list, label: str) -> dict:
         persist_directory="./data/chroma_db/admin",
     )
 
+    import os
+    has_api_key = bool(os.environ.get("DASHSCOPE_API_KEY"))
+
     total = len(questions)
     hits = 0
     reciprocal_ranks = []
@@ -172,7 +175,7 @@ def _evaluate_questions(questions: list, label: str) -> dict:
 
         print(f"\n  [{label}] ({i+1}/{total}) {question}")
 
-        # 检索相似度
+        # 检索相似度（不需要 API Key）
         results = vector_service.vector_store.similarity_search_with_score(question, k=3)
         if results:
             best_score = results[0][1]
@@ -202,30 +205,33 @@ def _evaluate_questions(questions: list, label: str) -> dict:
             reciprocal_ranks.append(0.0)
             print(f"    📊 无检索结果")
 
-        # 调用 Agent，检测工具调用
-        start_time = time.time()
-        try:
-            answer = agent.invoke(question, f"eval_{label}_{i}")
-        except Exception as e:
-            answer = f"错误: {e}"
-        elapsed = time.time() - start_time
+        # 调用 Agent，检测工具调用（需要 API Key）
+        if has_api_key:
+            start_time = time.time()
+            try:
+                answer = agent.invoke(question, f"eval_{label}_{i}")
+            except Exception as e:
+                answer = f"错误: {e}"
+            elapsed = time.time() - start_time
 
-        # 判断是否触发了联网搜索或拒答
-        answer_lower = answer.lower() if answer else ""
-        is_refusal = any(kw in answer for kw in [
-            "无法", "拒绝", "抱歉", "不能", "没有权限", "超出范围",
-            "不提供", "无法处理", "抱歉，我无法",
-        ])
-        is_web_fallback = "联网搜索" in answer or "网络搜索" in answer or "http" in answer_lower
+            # 判断是否触发了联网搜索或拒答
+            answer_lower = answer.lower() if answer else ""
+            is_refusal = any(kw in answer for kw in [
+                "无法", "拒绝", "抱歉", "不能", "没有权限", "超出范围",
+                "不提供", "无法处理", "抱歉，我无法",
+            ])
+            is_web_fallback = "联网搜索" in answer or "网络搜索" in answer or "http" in answer_lower
 
-        if is_refusal:
-            refusal_count += 1
-            print(f"    🔴 拒答 ({elapsed:.1f}s)")
-        elif is_web_fallback:
-            web_fallback_count += 1
-            print(f"    🟡 联网兜底 ({elapsed:.1f}s)")
+            if is_refusal:
+                refusal_count += 1
+                print(f"    🔴 拒答 ({elapsed:.1f}s)")
+            elif is_web_fallback:
+                web_fallback_count += 1
+                print(f"    🟡 联网兜底 ({elapsed:.1f}s)")
+            else:
+                print(f"    🟢 直接回答 ({elapsed:.1f}s)")
         else:
-            print(f"    🟢 直接回答 ({elapsed:.1f}s)")
+            print(f"    ⏭️  跳过 Agent 调用（无 API Key）")
 
     hit_rate = hits / total if total else 0.0
     mrr = sum(reciprocal_ranks) / len(reciprocal_ranks) if reciprocal_ranks else 0.0
@@ -251,9 +257,8 @@ def _evaluate_questions(questions: list, label: str) -> dict:
 # Pytest
 # ══════════════════════════════════════════════════════════════
 
-@pytest.mark.external
 def test_rag_precision():
-    """全量 RAG 检索精准度评估"""
+    """RAG 检索精准度评估（向量检索部分无需 API Key，Agent 部分需要）"""
     print("\n" + "=" * 60)
     print("  RAG 检索精准度评估")
     print("=" * 60)
