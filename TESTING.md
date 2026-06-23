@@ -6,7 +6,6 @@
 
 ```bash
 echo $DASHSCOPE_API_KEY   # 必须设置
-# 或写入 ./docker/.env
 ```
 
 ---
@@ -17,10 +16,9 @@ echo $DASHSCOPE_API_KEY   # 必须设置
 |------|------|----------|:----------:|
 | ① API 冒烟 | `pytest tests/test_api.py -v` | 全端点 + 认证 + 限流 | 是 |
 | ② Docker 构建 | `docker-compose up --build` | 镜像构建 + 容器启动 | 是 |
-| ③ RAG 评估 | `python evaluation.py` | 命中率/MRR/延迟指标 | 是 |
+| ③ RAG 精准度 | `pytest tests/test_rag_precision.py -v -s` | 显式/隐式/噪声题全量评估 | 是 |
 | ④ Locust 压测 | `locust -f tests/locustfile.py` | 系统稳定性与性能 | 是 |
-| ⑤ RAG 参数遍历 | `pytest tests/test_rag_precision_grid.py -v` | 分块参数调优对比 | 是 |
-| ⑥ 生产验证 | `bash tests/prod_verify.sh` | 线上 API + 前端 + 容器 | 否 |
+| ⑤ 生产验证 | `bash tests/prod_verify.sh` | 线上 API + 前端 + 容器 | 否 |
 
 ---
 
@@ -75,24 +73,42 @@ RAG_TEST_TOKEN=$ADMIN_TOKEN python -m pytest tests/test_api.py -v
 cd docker && docker-compose up --build
 ```
 
-构建成功后用 ① 或 ⑥ 验证服务功能。
+构建成功后用 ① 或 ⑤ 验证服务功能。
 
 ---
 
-## 第 ③ 层：RAG 评估
+## 第 ③ 层：RAG 检索精准度评估
 
-对当前生产配置执行检索质量评估（自动播种测试文档，评估后清理）。
+基于 5 个鸭鸭知识文档的全量评估，覆盖显式检索、隐式推理、域外噪声三个维度。
 
 ```bash
-python evaluation.py
+python -m pytest tests/test_rag_precision.py -v -s
 ```
 
-输出示例：
+### 测试集
+
+| 类别 | 数量 | 说明 |
+|------|------|------|
+| 显式问题 | 30 | 直接检索文档原文（产品规格 10 + FAQ 10 + 跨文件 10） |
+| 隐式问题 | 20 | 需要跨文档推理（如"跑Redis选哪种"→ m1.medium） |
+| 域外噪声 | 20 | 闲聊/操作指令（应触发拒答） |
+
+### 产出报告
+
 ```
-  Hit Rate: 66.67%
-  MRR:      55.56%
-  Latency:  145.2ms avg | p50=138.1ms | p95=210.5ms
+测试集      Hit Rate@3  MRR       平均最高相似度  联网兜底比例  拒答比例
+显式        100%        85%       0.89           0%           0%
+隐式        75%         60%       0.72           25%          0%
+噪声        5%          0%        0.43           10%          90%
 ```
+
+- **Hit Rate@3**：top-3 检索结果中是否包含标准答案
+- **MRR**：第一个相关结果的排名倒数（显式/隐式题）
+- **平均最高相似度**：top-1 结果的余弦相似度
+- **联网兜底比例**：Agent 调用了 web_search 的比例
+- **拒答比例**：Agent 拒绝回答的比例
+
+报告同时保存到 `results/rag_precision_report.json`。
 
 ---
 
@@ -127,26 +143,7 @@ locust -f tests/locustfile.py --host=http://localhost:8000 \
 
 ---
 
-## 第 ⑤ 层：RAG 参数遍历
-
-暴力遍历 `chunk_size × overlap` 的 9 种组合，对比 Hit Rate / MRR / 域外误召回率。
-
-```bash
-python -m pytest tests/test_rag_precision_grid.py -v -s
-```
-
-| 参数 | 候选值 |
-|------|--------|
-| chunk_size | 256, 512, 1024 |
-| overlap | 0, 64, 128 |
-
-产出 Markdown 对比表 + `results/rag_precision_grid.csv`。
-
-> 与第 ③ 层的区别：③ 测当前配置的绝对值，⑤ 遍历参数找最优组合。
-
----
-
-## 第 ⑥ 层：生产环境自动化验证
+## 第 ⑤ 层：生产环境自动化验证
 
 快速巡检线上服务（前端 + API + Docker 容器），输出可视化结果。
 
@@ -164,8 +161,8 @@ bash tests/prod_verify.sh
 tests/
 ├── conftest.py                  # external 标记自动跳过
 ├── test_api.py                  # API 冒烟（本地 + 生产）
+├── test_rag_precision.py        # RAG 精准度（30+20+20 题）
 ├── locustfile.py                # Locust 压测
-├── test_rag_precision_grid.py   # RAG 参数遍历
 ├── prod_verify.sh               # 生产环境巡检
 └── data/                        # 测试文档
 ```
