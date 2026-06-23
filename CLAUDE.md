@@ -12,7 +12,7 @@
 - **Agent 框架**: LangChain（`bind_tools` + 自定义 Agent 循环）
 - **向量数据库**: Chroma（本地持久化）
 - **嵌入模型**: DashScopeEmbeddings（`text-embedding-v4`，阿里云）
-- **对话模型**: ChatTongyi（`qwen3-max-2026-01-23`，阿里云通义），必须传 `streaming=True` 否则 `stream()` 降级为非流式
+- **对话模型**: ChatTongyi（`qwen3-max-preview`，阿里云通义），必须传 `streaming=True` 否则 `stream()` 降级为非流式
 - **UI（开发）**: Streamlit（两个独立应用）
 - **UI（生产）**: 静态 HTML/CSS/JS（nginx serving），marked.js Markdown 渲染，SSE 流式消费
 - **API**: FastAPI
@@ -93,7 +93,7 @@
 - `min_split_char_number`（1000）：文档小于此字符数不触发分割
 
 检索：
-- `retriever_k`（3）：每次查询检索的文档数量
+- `retriever_k`（15）：每次查询检索的文档数量（调优推荐）
 
 Agent：
 - `AGENT_SYSTEM_PROMPT`：Agent 系统提示词（工具使用规则 + 拒答规则）
