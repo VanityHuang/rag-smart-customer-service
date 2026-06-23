@@ -23,19 +23,27 @@ MAX_HISTORY_ROUNDS = 5  # 保留最近 5 轮对话（10 条消息：5 human + 5 
 class RagAgentService:
     def __init__(self, vector_service: VectorStoreService = None, role: str = "admin"):
         self.role = role
-        self.vector_service = vector_service or VectorStoreService(
-            embedding=config.get_embedding_model()
-        )
-        self.chat_model = ChatOpenAI(
-            model=config.chat_model_name,
-            temperature=0,
-            streaming=True,
-            api_key=config.dashscope_api_key,
-            base_url=config.chat_base_url,
-        )
-        self.tools = self._create_tools()
-        self.tool_map = {t.name: t for t in self.tools}
-        self.model_with_tools = self.chat_model.bind_tools(self.tools)
+        self._is_mock = config.mock_llm
+        if self._is_mock:
+            self.vector_service = None
+            self.chat_model = None
+            self.model_with_tools = None
+            self.tools = []
+            self.tool_map = {}
+        else:
+            self.vector_service = vector_service or VectorStoreService(
+                embedding=config.get_embedding_model()
+            )
+            self.chat_model = ChatOpenAI(
+                model=config.chat_model_name,
+                temperature=0,
+                streaming=True,
+                api_key=config.dashscope_api_key,
+                base_url=config.chat_base_url,
+            )
+            self.tools = self._create_tools()
+            self.tool_map = {t.name: t for t in self.tools}
+            self.model_with_tools = self.chat_model.bind_tools(self.tools)
         # Token 用量追踪 + 工具调用追踪（每次请求重置）
         self._total_usage = {"input_tokens": 0, "output_tokens": 0}
         self._had_tool_calls = False
@@ -342,6 +350,11 @@ class RagAgentService:
 
     def invoke(self, message: str, session_id: str = "user_001") -> str:
         """处理用户消息并返回 Agent 回答"""
+        if self._is_mock:
+            import time
+            time.sleep(2.0)  # 模拟 LLM 延迟
+            return "（Mock 回答）这是一个模拟回复，用于压测。"
+
         self._total_usage = {"input_tokens": 0, "output_tokens": 0}
         self._had_tool_calls = False
         self._tools_called = set()
@@ -368,12 +381,16 @@ class RagAgentService:
         return final_response.content
 
     def stream(self, message: str, session_id: str = "user_001"):
-        """真正的流式接口 — Agent 循环处理工具调用后，流式输出最终答案
+        """流式接口 — 两阶段：Agent 循环处理工具调用后，流式输出最终答案"""
+        if self._is_mock:
+            import time
+            mock_text = "（Mock 回答）这是一个模拟流式回复，用于压测。"
+            for char in mock_text:
+                yield char
+                time.sleep(0.05)
+            return
 
-        两阶段设计：
-        1. Agent 循环（同步）：用 model_with_tools.invoke 检测 tool_calls
-        2. 流式输出（异步）：用 chat_model.stream 逐 token 生成最终答案
-        """
+        # Phase 1: Agent 循环 — 同步处理工具调用
         self._total_usage = {"input_tokens": 0, "output_tokens": 0}
         self._had_tool_calls = False
         self._tools_called = set()

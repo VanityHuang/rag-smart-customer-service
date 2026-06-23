@@ -15,6 +15,7 @@ Locust 压测脚本 — 系统稳定性与性能测试
 
 环境变量:
     RAG_LOCUST_TOKEN — Bearer token（默认 guest）
+    RAG_MOCK_LLM=1 — 启用 Mock LLM 模式，不消耗 Token 但走通全链路
 """
 
 import os
@@ -53,7 +54,8 @@ class RAGUser(HttpUser):
         )
 
     # ── 以下任务会消耗 LLM Token，默认关闭。
-    # 将 @task(0) 改为 @task(1~5) 启用。
+    # 设置 RAG_MOCK_LLM=1 启用 Mock 模式（不消耗 Token）后，
+    # 将 @task(0) 改为 @task(1~5) 可启用。
     # @task(0)
     def chat(self):
         """聊天（消耗 Token，默认关闭）"""
