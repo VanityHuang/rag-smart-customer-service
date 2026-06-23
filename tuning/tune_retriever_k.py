@@ -1,7 +1,7 @@
 """
 retriever_k 调优 — 离线扫描 + 在线验证
 
-Phase 1（离线）: 循环 k=1,3,5,7,10，绘制 Hit Rate 收敛曲线，锁定拐点候选
+Phase 1（离线）: 循环 k=1,3,5,7,10,15,20，绘制 Hit Rate 收敛曲线，锁定拐点候选
 Phase 2（在线）: 对候选 k 值运行真实 Agent 调用，对比 Token 消耗与回答质量
 
 前提: 已通过 tune_chunk_params.py 确定了最优 chunk_size 和 overlap
@@ -294,7 +294,7 @@ def phase_offline():
     """Phase 1: 离线扫描不同 k 值"""
     import tempfile
 
-    k_values = [1, 3, 5, 7, 10]
+    k_values = [1, 3, 5, 7, 10, 15, 20]
     results = []
 
     print("=" * 60)
