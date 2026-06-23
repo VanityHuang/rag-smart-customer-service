@@ -89,6 +89,18 @@ EXPLICIT_QUESTIONS = [
     {"question": "预置集成了哪些即时通讯系统", "expected": "钉钉/企业微信/飞书"},
     {"question": "备份数据保留多少天", "expected": "90 天"},
     {"question": "数据加密存储层使用什么加密方式", "expected": "AES-256"},
+    # ── 运维手册.pdf ──
+    {"question": "鸭鸭云服务器推荐什么操作系统", "expected": "CentOS 7.9 或 Ubuntu 22.04 LTS"},
+    {"question": "系统盘推荐多大容量", "expected": "SSD 云盘 50GB"},
+    {"question": "数据盘最低不少于多少", "expected": "不低于 100GB"},
+    {"question": "实例创建后多久可使用", "expected": "3-5 分钟"},
+    {"question": "创建运维账号的命令是什么", "expected": "useradd -m -s /bin/bash ops"},
+    # ── 业务报告.png ──
+    {"question": "鸭鸭科技2024年营业收入", "expected": "2.36 亿元"},
+    {"question": "鸭鸭科技2024年净利润", "expected": "3460万元"},
+    {"question": "鸭鸭科技2024年研发投入", "expected": "1870万元"},
+    {"question": "鸭鸭科技服务多少客户", "expected": "1200+"},
+    {"question": "鸭鸭科技2024年营收同比增长", "expected": "32.6%"},
 ]
 
 IMPLICIT_QUESTIONS = [
@@ -112,6 +124,17 @@ IMPLICIT_QUESTIONS = [
     {"question": "专业版套餐包含哪些高级功能", "expected": "高级分析和自动化"},
     {"question": "哪些地方部署了鸭鸭云服务器节点", "expected": "华北1（北京）"},
     {"question": "游戏服务器应该选哪种计算型实例", "expected": "c1.xlarge"},
+    # ── 运维手册.pdf（隐式）──
+    {"question": "云服务器选择什么操作系统好", "expected": "CentOS 7.9"},
+    {"question": "首次登录需要做什么", "expected": "修改默认密码"},
+    {"question": "CentOS怎么更新系统", "expected": "yum update -y"},
+    {"question": "配置时区的命令是什么", "expected": "timedatectl set-timezone Asia/Shanghai"},
+    # ── 业务报告.png（隐式）──
+    {"question": "鸭鸭科技净利润增长率", "expected": "28.4%"},
+    {"question": "客户数量增长率", "expected": "41.2%"},
+    {"question": "研发投入增长率", "expected": "35.7%"},
+    {"question": "鸭鸭科技有哪些核心业务", "expected": "云计算服务"},
+    {"question": "鸭鸭科技成立时间", "expected": "2018 年"},
 ]
 
 NOISE_QUESTIONS = [
@@ -186,7 +209,6 @@ def _build_index(tmp_dir: str):
     """用当前 config 中的 chunk_size/overlap 建索引"""
     import config_data as config
     from langchain_chroma import Chroma
-    from langchain_community.embeddings import DashScopeEmbeddings
     from langchain_text_splitters import RecursiveCharacterTextSplitter
     from file_parser import parse_bytes
 
@@ -205,22 +227,18 @@ def _build_index(tmp_dir: str):
         length_function=len,
     )
 
-    MAX_CHARS = 100_000  # 跳过超大文件
+    TEXT_EXT = {".txt", ".md"}
     for filename in SEED_FILES:
         fpath = DATA_DIR / filename
         if not fpath.exists():
             continue
-        try:
+        ext = fpath.suffix.lower()
+        if ext in TEXT_EXT:
             text = fpath.read_text(encoding="utf-8", errors="ignore")
-        except Exception:
-            text = ""
-        if not text or len(text) < 10:
+        else:
             file_bytes = fpath.read_bytes()
             text = parse_bytes(file_bytes, filename)
         if not text:
-            continue
-        if len(text) > MAX_CHARS:
-            print(f"  ⏭️  跳过 {filename} ({len(text):,} 字符)")
             continue
         chunks = splitter.split_text(text) if len(text) > config.min_split_char_number else [text]
         # 分批添加，避免 Chroma batch size 超限
@@ -333,131 +351,175 @@ def phase_offline():
 
 
 # ══════════════════════════════════════════════════════════════
-# Phase 2: 在线验证
+# Phase 2: 在线验证（三维量化打分）
 # ══════════════════════════════════════════════════════════════
 
-def _classify_answer(answer: str) -> str:
-    if not answer:
-        return "empty"
-    refusal_kw = ["无法", "拒绝", "抱歉", "不能", "没有权限", "超出范围",
-                   "不提供", "无法处理", "抱歉，我无法", "必须拒绝"]
-    if any(kw in answer for kw in refusal_kw):
-        return "refuse"
-    if "联网搜索" in answer or "网络搜索" in answer or "http" in answer.lower():
-        return "web_fallback"
-    return "direct"
+def _judge_quality(question: str, label: str, answer: str) -> float:
+    """LLM-as-Judge：对 Agent 回答质量打分 0-5"""
+    from langchain_community.chat_models import ChatTongyi
+    import config_data as config
+
+    judge = ChatTongyi(model=config.chat_model_name, temperature=0)
+
+    prompt = f"""你是一个 RAG 系统评估员。请对以下回答进行打分（0-5分）。
+
+问题类别：{label}
+用户问题：{question}
+Agent回答：{answer}
+
+评分标准：
+- 显式题（知识库有明确答案）：回答准确包含了所需信息 → 4-5分；部分正确 → 2-3分；错误/拒答 → 0-1分
+- 隐式题（需要推理）：推理正确且答案合理 → 4-5分；部分合理 → 2-3分；错误 → 0-1分
+- 噪声题（应拒答）：正确拒绝 → 5分；拒绝但理由不充分 → 3-4分；没有拒绝 → 0-2分
+
+只返回一个数字分数，不要其他文字。"""
+    try:
+        resp = judge.invoke(prompt)
+        score = float(resp.content.strip())
+        return max(0.0, min(5.0, score))
+    except Exception:
+        return 0.0
+
+
+def _normalize(values: list) -> list:
+    """归一化到 [0, 1]，值越小归一化值越接近 1（越小越好）"""
+    if not values:
+        return values
+    mx = max(values)
+    if mx == 0:
+        return [1.0] * len(values)
+    return [1 - v / mx for v in values]
 
 
 def phase_online(k_values: list):
-    """Phase 2: 在线验证候选 k 值"""
+    """Phase 2: 在线验证 — 三维量化打分（成本40% + 延迟20% + 质量40%）"""
     import config_data as config
     from rag_agent import RagAgentService
 
     print("\n" + "=" * 60)
-    print("  Phase 2: 在线验证 — Token 消耗 + 回答质量")
+    print("  Phase 2: 在线验证 — 三维量化打分")
     print(f"  候选 k 值: {k_values}")
     print("=" * 60)
 
-    results = []
+    all_results = []
 
     for k in k_values:
         print(f"\n{'─' * 40}")
         print(f"  测试 k={k}")
         print(f"{'─' * 40}")
 
-        # 临时修改 config 中的 retriever_k
         original_k = config.retriever_k
         config.retriever_k = k
 
         agent = RagAgentService()
         total_tokens_in = 0
         total_tokens_out = 0
-        categories = {"direct": 0, "web_fallback": 0, "refuse": 0}
+        latencies = []
+        quality_scores = []
         total = len(ONLINE_SAMPLE)
 
         for i, (label, q) in enumerate(ONLINE_SAMPLE):
             question = q["question"]
-            print(f"  [{label}] ({i+1}/{total}) {question}", end=" ")
+            print(f"  [{label}] ({i+1}/{total}) {question}", end=" ", flush=True)
 
+            # Agent 回答
             start = time.time()
             try:
                 answer = agent.invoke(question, f"kune_k{k}_{i}")
             except Exception as e:
                 answer = f"错误: {e}"
             elapsed = time.time() - start
+            latencies.append(elapsed)
 
-            # 累加 token
             usage = agent.token_usage
             total_tokens_in += usage["input_tokens"]
             total_tokens_out += usage["output_tokens"]
 
-            category = _classify_answer(answer)
-            categories[category] = categories.get(category, 0) + 1
+            # Judge 打分
+            score = _judge_quality(question, label, answer)
+            quality_scores.append(score)
 
-            icon = {"direct": "🟢", "web_fallback": "🟡", "refuse": "🔴"}
-            print(f"{icon.get(category, '?')} {category} ({elapsed:.1f}s)")
+            icon = "🟢" if score >= 4 else "🟡" if score >= 2 else "🔴"
+            print(f"{icon} 分数={score:.1f} ({elapsed:.1f}s)")
 
-        # 恢复 config
         config.retriever_k = original_k
 
         avg_tokens_in = total_tokens_in / total
-        avg_tokens_out = total_tokens_out / total
         avg_tokens_total = (total_tokens_in + total_tokens_out) / total
+        avg_latency = sum(latencies) / len(latencies)
+        avg_quality = sum(quality_scores) / len(quality_scores)
 
-        result = {
+        all_results.append({
             "k": k,
-            "total_tokens_in": total_tokens_in,
-            "total_tokens_out": total_tokens_out,
             "avg_tokens_in": avg_tokens_in,
-            "avg_tokens_out": avg_tokens_out,
             "avg_tokens_total": avg_tokens_total,
-            "categories": categories,
-            "direct_ratio": categories["direct"] / total,
-            "web_ratio": categories["web_fallback"] / total,
-            "refuse_ratio": categories["refuse"] / total,
-        }
-        results.append(result)
+            "avg_latency": avg_latency,
+            "avg_quality": avg_quality,
+        })
 
-        print(f"\n  📊 k={k}: 平均 Token={avg_tokens_total:.0f} "
-              f"(入{avg_tokens_in:.0f}/出{avg_tokens_out:.0f}) | "
-              f"直接={categories['direct']}/{total} | "
-              f"联网={categories['web_fallback']}/{total} | "
-              f"拒答={categories['refuse']}/{total}")
+        print(f"\n  📊 k={k}: 成本={avg_tokens_in:.0f} tokens | "
+              f"延迟={avg_latency:.1f}s | 质量={avg_quality:.2f}/5")
+
+    # 三维归一化打分
+    tokens_list = [r["avg_tokens_in"] for r in all_results]
+    latency_list = [r["avg_latency"] for r in all_results]
+    quality_list = [r["avg_quality"] for r in all_results]
+
+    token_norm = _normalize(tokens_list)
+    latency_norm = _normalize(latency_list)
+    # 质量：越高越好，直接归一化到 [0, 1]
+    max_q = max(quality_list) if quality_list else 1
+    quality_norm = [q / max_q for q in quality_list]
+
+    for i, r in enumerate(all_results):
+        r["score"] = (
+            token_norm[i] * 0.4
+            + latency_norm[i] * 0.2
+            + quality_norm[i] * 0.4
+        )
 
     # 输出对比表
-    print("\n" + "=" * 60)
-    print("  在线验证对比表")
-    print("=" * 60)
+    print("\n" + "=" * 70)
+    print("  在线验证 — 三维量化打分表")
+    print("=" * 70)
 
-    header = f"{'k':<5} {'平均Token':<12} {'输入Token':<12} {'直接回答':<10} {'联网兜底':<10} {'拒答':<8}"
+    header = f"{'k':<5} {'成本分':<8} {'延迟分':<8} {'质量分':<8} {'总分':<8} {'平均Token':<12} {'平均延迟':<10} {'平均质量':<8}"
     print(f"\n{header}")
     print("-" * len(header))
 
-    for r in results:
-        c = r["categories"]
+    for r in all_results:
         print(
             f"{r['k']:<5} "
-            f"{r['avg_tokens_total']:<11.0f} "
+            f"{token_norm[all_results.index(r)]:<7.2%} "
+            f"{latency_norm[all_results.index(r)]:<7.2%} "
+            f"{quality_norm[all_results.index(r)]:<7.2%} "
+            f"{r['score']:<7.4f} "
             f"{r['avg_tokens_in']:<11.0f} "
-            f"{c['direct']:<9} "
-            f"{c['web_fallback']:<9} "
-            f"{c['refuse']:<7}"
+            f"{r['avg_latency']:<9.1f} "
+            f"{r['avg_quality']:<7.2f}"
         )
 
-    # 推荐: 平均 Token 最少且回答质量不低于阈值的最小 k
-    # 筛选: 直接回答 >= 50% 的候选
-    viable = [r for r in results if r["direct_ratio"] >= 0.5]
-    if viable:
-        best = min(viable, key=lambda x: x["avg_tokens_total"])
+    # 推荐逻辑
+    best = all_results[0]
+    if len(all_results) >= 2:
+        q1, q2 = all_results[0]["avg_quality"], all_results[1]["avg_quality"]
+        if abs(q1 - q2) < 0.2:
+            # 质量差距 < 0.2 → 选 Token 更少的
+            best = min(all_results, key=lambda r: r["avg_tokens_in"])
+            print(f"\n🎯 质量差距 {abs(q1 - q2):.2f} < 0.2 → 推荐 Token 更少的 k={best['k']}")
+        else:
+            # 质量差距 ≥ 0.2 → 选质量更高的
+            best = max(all_results, key=lambda r: r["avg_quality"])
+            print(f"\n🎯 质量差距 {abs(q1 - q2):.2f} ≥ 0.2 → 推荐质量更高的 k={best['k']}")
     else:
-        best = min(results, key=lambda x: x["avg_tokens_total"])
+        best = all_results[0]
 
-    print(f"\n🏆 推荐 k={best['k']}")
-    print(f"   平均 Token: {best['avg_tokens_total']:.0f} (输入 {best['avg_tokens_in']:.0f} / 输出 {best['avg_tokens_out']:.0f})")
-    print(f"   直接回答: {best['categories']['direct']}/{len(ONLINE_SAMPLE)}")
-    print(f"   联网兜底: {best['categories']['web_fallback']}/{len(ONLINE_SAMPLE)}")
+    print(f"   平均 Token: {best['avg_tokens_total']:.0f} | "
+          f"平均延迟: {best['avg_latency']:.1f}s | "
+          f"质量分: {best['avg_quality']:.2f}/5 | "
+          f"综合分: {best['score']:.4f}")
 
-    return results, best
+    return all_results, best
 
 
 # ══════════════════════════════════════════════════════════════
