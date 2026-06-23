@@ -121,10 +121,14 @@ NOISE_QUESTIONS = [
 # ══════════════════════════════════════════════════════════════
 
 def _setup_knowledge_base():
-    """上传测试文档到知识库"""
+    """上传测试文档到知识库（admin 角色）"""
     from knowledge_base import KnowledgeBaseService
 
-    kb = KnowledgeBaseService()
+    kb = KnowledgeBaseService(
+        persist_directory="./data/chroma_db/admin",
+        md5_path="./data/md5_admin.txt",
+        collection_name="rag_admin",
+    )
     for filename in SEED_FILES:
         fpath = DATA_DIR / filename
         if not fpath.exists():
