@@ -89,7 +89,7 @@
 ## 关键配置（`config_data.py`）
 
 文本分割：
-- `chunk_size`（100）/ `chunk_overlap`（20）/ `separators`：文本分割参数
+- `chunk_size`（256）/ `chunk_overlap`（32）/ `separators`：文本分割参数
 - `min_split_char_number`（1000）：文档小于此字符数不触发分割
 
 检索：
