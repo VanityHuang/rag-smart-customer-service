@@ -80,11 +80,18 @@ def get_embedding_model():
         from openai import OpenAI
 
         class _SiliconFlowEmbeddings(OpenAIEmbeddings):
-            """简化版：调用 SiliconFlow 时只传必要参数"""
-            def _get_len_safe_embeddings(self, texts, **kwargs):
+            """简化版：调用 SiliconFlow 时只传必要参数，批量处理避免 API 限制"""
+            def embed_documents(self, texts):
                 client = OpenAI(api_key=embedding_api_key, base_url=embedding_base_url)
-                resp = client.embeddings.create(input=texts, model=embedding_model_name)
-                return [d.embedding for d in resp.data]
+                all_embeddings = []
+                for i in range(0, len(texts), 32):
+                    batch = texts[i:i + 32]
+                    resp = client.embeddings.create(input=batch, model=embedding_model_name)
+                    all_embeddings.extend([d.embedding for d in resp.data])
+                return all_embeddings
+
+            def embed_query(self, text):
+                return self.embed_documents([text])[0]
 
         return _SiliconFlowEmbeddings(
             model=embedding_model_name,
