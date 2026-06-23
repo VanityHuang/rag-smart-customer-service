@@ -160,7 +160,7 @@ def _evaluate_retriever(questions: list, label: str) -> dict:
         question = q["question"]
         expected = q["expected"]
 
-        results = vector_service.vector_store.similarity_search_with_score(question, k=3)
+        results = vector_service.vector_store.similarity_search_with_score(question, k=config.retriever_k)
 
         if results:
             best_score = results[0][1]
