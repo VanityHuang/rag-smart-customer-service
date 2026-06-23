@@ -265,7 +265,7 @@ def _build_and_evaluate(docs: dict, chunk_size: int, chunk_overlap: int) -> dict
                     hit = False
                     best_rank = None
                     for rank, (doc, score) in enumerate(results, start=1):
-                        if q["expected"] and rouge_l_f1(q["expected"], doc.page_content) >= ROUGE_L_THRESHOLD:
+                        if q["expected"] and rouge_l_precision(q["expected"], doc.page_content) >= ROUGE_L_THRESHOLD:
                             hit = True
                             if best_rank is None:
                                 best_rank = rank

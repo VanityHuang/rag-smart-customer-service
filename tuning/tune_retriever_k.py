@@ -301,44 +301,33 @@ def phase_offline():
                   f"相似度={result['avg_similarity']:.4f}  "
                   f"({elapsed:.1f}s)")
 
-    # 输出收敛曲线（ASCII 图）
-    print("\n" + "=" * 60)
-    print("  Hit Rate 收敛曲线")
-    print("=" * 60)
-
-    max_bar = 40
-    max_hr = max(r["hit_rate"] for r in results) if results else 1
-
-    print(f"\n{'k':<5} {'Hit Rate':<10} {'曲线'}")
-    print("-" * 60)
-    for r in results:
-        bar_len = int(r["hit_rate"] / max(max_hr, 0.01) * max_bar)
-        bar = "█" * bar_len + "░" * (max_bar - bar_len)
-        print(f"{r['k']:<5} {r['hit_rate']:<9.0%} {bar}")
-
     # 输出对比表
-    print(f"\n{'k':<5} {'Hit Rate':<10} {'MRR':<10} {'平均相似度':<12}")
-    print("-" * 45)
+    print(f"\n{'k':<5} {'Hit Rate':<10} {'MRR':<10} {'增量'}")
+    print("-" * 35)
+    prev_hr = 0
     for r in results:
-        print(f"{r['k']:<5} {r['hit_rate']:<9.0%} {r['mrr']:<9.2%} {r['avg_similarity']:<11.4f}")
+        delta = r["hit_rate"] - prev_hr
+        d = f"+{delta:.0%}" if delta > 0.001 else "—"
+        print(f"{r['k']:<5} {r['hit_rate']:<9.0%} {r['mrr']:<9.2%} {d}")
+        prev_hr = r["hit_rate"]
 
-    # 找拐点：Hit Rate 增量 < 5% 的第一个 k
-    candidates = []
-    for i in range(1, len(results)):
-        delta = results[i]["hit_rate"] - results[i - 1]["hit_rate"]
-        if delta < 0.05:  # 增量小于 5%
-            candidates.append(results[i]["k"])
+    # 推荐：Hit Rate 增量 < 5% 的最小 k
+    recommended_k = results[-1]["k"]
+    prev_hr = 0
+    for r in results:
+        delta = r["hit_rate"] - prev_hr
+        if delta < 0.05 and r["k"] > 1:
+            recommended_k = r["k"]
             break
-    if not candidates:
-        candidates = [results[-1]["k"]]
+        prev_hr = r["hit_rate"]
 
-    # 也把 Hit Rate 最高的 k 加入候选
+    candidates = [recommended_k]
     best_hr = max(results, key=lambda x: x["hit_rate"])
     if best_hr["k"] not in candidates:
         candidates.append(best_hr["k"])
 
-    print(f"\n🎯 拐点候选 k 值: {candidates}")
-    print(f"   (Hit Rate 增量 < 5% 的第一个 k，以及 Hit Rate 最高的 k)")
+    print(f"\n🎯 推荐: k={recommended_k}（以后再增加 k 值，Hit Rate 提升 < 5%）")
+    print(f"   候选 k 值（Phase 2 在线验证）: {candidates}")
 
     return results, candidates
 
