@@ -24,6 +24,27 @@ import sys
 import time
 from pathlib import Path
 
+
+def _load_docker_env():
+    """从 docker/.env 加载环境变量"""
+    env_path = Path(__file__).parent.parent / "docker" / ".env"
+    if not env_path.exists():
+        return
+    with open(env_path, encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            if "=" in line:
+                key, _, value = line.partition("=")
+                key = key.strip()
+                value = value.strip()
+                if key and key not in os.environ:
+                    os.environ[key] = value
+
+
+_load_docker_env()
+
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 DATA_DIR = Path(__file__).parent.parent / "tests" / "data"
