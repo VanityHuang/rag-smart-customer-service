@@ -138,11 +138,12 @@ ALL_QUESTIONS = (
 # 核心逻辑
 # ══════════════════════════════════════════════════════════════
 
-def _preload_documents() -> dict:
-    """预加载所有文档文本（只解析一次）"""
+def _preload_documents(max_chars: int = 100_000) -> dict:
+    """预加载文档文本，跳过超大文件（避免嵌入 API 耗时过长）"""
     from file_parser import parse_bytes
 
     docs = {}
+    skipped = []
     for filename in SEED_FILES:
         fpath = DATA_DIR / filename
         if not fpath.exists():
@@ -156,8 +157,15 @@ def _preload_documents() -> dict:
             file_bytes = fpath.read_bytes()
             text = parse_bytes(file_bytes, filename)
         if text:
-            docs[filename] = text
-            print(f"  📄 {filename}: {len(text)} 字符")
+            if len(text) > max_chars:
+                skipped.append((filename, len(text)))
+            else:
+                docs[filename] = text
+                print(f"  📄 {filename}: {len(text)} 字符")
+    if skipped:
+        print(f"  ⏭️  跳过 {len(skipped)} 个大文件（>{max_chars:,} 字符）:")
+        for name, size in skipped:
+            print(f"     {name}: {size:,} 字符")
     return docs
 
 
@@ -275,6 +283,8 @@ def main():
     parser.add_argument("--sizes", nargs="+", type=int, default=[128, 256, 512, 1024])
     parser.add_argument("--overlaps", nargs="+", type=int, default=[0, 32, 64, 128])
     parser.add_argument("--fast", action="store_true", help="快速模式: 256/512 × 32/64")
+    parser.add_argument("--max-chars", type=int, default=100_000,
+                        help="跳过超过此字符数的文档（默认 100000，避免大文件嵌入过慢）")
     args = parser.parse_args()
 
     if args.fast:
@@ -292,7 +302,7 @@ def main():
 
     # 预加载文档
     print("\n📥 预加载文档...")
-    docs = _preload_documents()
+    docs = _preload_documents(max_chars=args.max_chars)
     print(f"   共加载 {len(docs)} 个文档")
 
     # 遍历组合
