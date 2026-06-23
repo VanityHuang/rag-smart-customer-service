@@ -166,8 +166,9 @@ def _build_and_evaluate(docs: dict, chunk_size: int, chunk_overlap: int) -> dict
     from langchain_chroma import Chroma
     from langchain_community.embeddings import DashScopeEmbeddings
     from langchain_text_splitters import RecursiveCharacterTextSplitter
+    import config_data as config
 
-    embedding = DashScopeEmbeddings(model="text-embedding-v4")
+    embedding = DashScopeEmbeddings(model=config.embedding_model_name)
 
     with tempfile.TemporaryDirectory() as tmp_dir:
         chroma = Chroma(
