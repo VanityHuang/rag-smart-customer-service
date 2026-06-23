@@ -68,7 +68,7 @@ class RAGUser(HttpUser):
         """流式聊天（RAG_MOCK_LLM=1 时不消耗 Token）"""
         self.client.post(
             "/api/chat/stream",
-            json={"message": "1+1=?", "session_id": self.session_id},
+            json={"message": "你好", "session_id": self.session_id},
             headers=self.auth_headers,
-            name="/api/chat/stream [1+1=?]",
+            name="/api/chat/stream [你好]",
         )
