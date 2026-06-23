@@ -16,9 +16,10 @@ echo $DASHSCOPE_API_KEY   # 必须设置
 |------|------|----------|:----------:|
 | ① API 冒烟 | `pytest tests/test_api.py -v` | 全端点 + 认证 + 限流 | 是 |
 | ② Docker 构建 | `docker-compose up --build` | 镜像构建 + 容器启动 | 是 |
-| ③ RAG 精准度 | `pytest tests/test_rag_precision.py -v -s` | 向量检索评估（无需 Key）+ Agent 行为检测（需 Key） | 部分 |
-| ④ Locust 压测 | `locust -f tests/locustfile.py` | 系统稳定性与性能 | 是 |
-| ⑤ 生产验证 | `bash tests/prod_verify.sh` | 线上 API + 前端 + 容器 | 否 |
+| ③ 离线评估 | `pytest tests/test_rag_retriever.py -v -s` | 检索侧能力：Hit Rate / MRR / 相似度 | 否 |
+| ④ 在线评估 | `pytest tests/test_rag_agent.py -v -s` | Agent 行为：联网兜底 / 拒答比例 | 是 |
+| ⑤ Locust 压测 | `locust -f tests/locustfile.py` | 系统稳定性与性能 | 是 |
+| ⑥ 生产验证 | `bash tests/prod_verify.sh` | 线上 API + 前端 + 容器 | 否 |
 
 ---
 
@@ -73,46 +74,69 @@ RAG_TEST_TOKEN=$ADMIN_TOKEN python -m pytest tests/test_api.py -v
 cd docker && docker-compose up --build
 ```
 
-构建成功后用 ① 或 ⑤ 验证服务功能。
+构建成功后用 ① 或 ⑥ 验证服务功能。
 
 ---
 
-## 第 ③ 层：RAG 检索精准度评估
+## 第 ③ 层：离线评估（检索侧能力）
 
-基于 5 个鸭鸭知识文档的全量评估，覆盖显式检索、隐式推理、域外噪声三个维度。
+纯向量检索评估，不调用 LLM，无需 API Key。基于 5 个鸭鸭知识文档的 70 条测试集。
 
 ```bash
-python -m pytest tests/test_rag_precision.py -v -s
+python -m pytest tests/test_rag_retriever.py -v -s
 ```
 
-### 测试集
+测试集：30 显式 + 20 隐式 + 20 噪声 = 70 题
 
-| 类别 | 数量 | 说明 |
-|------|------|------|
-| 显式问题 | 30 | 直接检索文档原文（产品规格 10 + FAQ 10 + 跨文件 10） |
-| 隐式问题 | 20 | 需要跨文档推理（如"跑Redis选哪种"→ m1.medium） |
-| 域外噪声 | 20 | 闲聊/操作指令（应触发拒答） |
-
-### 产出报告
+产出报告：
 
 ```
-测试集      Hit Rate@3  MRR       平均最高相似度  联网兜底比例  拒答比例
-显式        100%        85%       0.89           0%           0%
-隐式        75%         60%       0.72           25%          0%
-噪声        5%          0%        0.43           10%          90%
+测试集    数量  命中  Hit Rate@3  MRR       平均最高相似度
+显式      30    28    93%         85%       0.8234
+隐式      20    14    70%         60%       0.7156
+噪声      20    1     5%          3%        0.4312
 ```
 
-- **Hit Rate@3**：top-3 检索结果中是否包含标准答案
-- **MRR**：第一个相关结果的排名倒数（显式/隐式题）
+- **Hit Rate@3**：top-3 检索结果中是否包含标准答案关键词
+- **MRR**：第一个相关结果的排名倒数
 - **平均最高相似度**：top-1 结果的余弦相似度
-- **联网兜底比例**：Agent 调用了 web_search 的比例
-- **拒答比例**：Agent 拒绝回答的比例
 
-报告同时保存到 `results/rag_precision_report.json`。
+报告保存到 `results/rag_retriever_report.json`。
 
 ---
 
-## 第 ④ 层：Locust 压测
+## 第 ④ 层：在线评估（Agent 行为检测）
+
+通过完整 Agent 链路（Retriever + LLM + 工具路由），统计联网搜索和拒答行为。需要 API Key。
+
+```bash
+python -m pytest tests/test_rag_agent.py -v -s
+```
+
+精选测试集：10 显式 + 10 隐式 + 10 噪声 = 30 题
+
+产出报告：
+
+```
+测试集    数量  直接回答  联网兜底  拒答
+显式      10    8        2        0
+隐式      10    6        3        1
+噪声      10    0        1        9
+
+显式: 直接回答 80% | 联网兜底 20% | 拒答 0%
+隐式: 直接回答 60% | 联网兜底 30% | 拒答 10%
+噪声: 直接回答 0% | 联网兜底 10% | 拒答 90%
+```
+
+- **直接回答**：Agent 仅用知识库内容回答
+- **联网兜底**：Agent 调用了 web_search 补充信息
+- **拒答**：Agent 拒绝回答
+
+报告保存到 `results/rag_agent_report.json`。
+
+---
+
+## 第 ⑤ 层：Locust 压测
 
 ### 安装
 
@@ -143,7 +167,7 @@ locust -f tests/locustfile.py --host=http://localhost:8000 \
 
 ---
 
-## 第 ⑤ 层：生产环境自动化验证
+## 第 ⑥ 层：生产环境自动化验证
 
 快速巡检线上服务（前端 + API + Docker 容器），输出可视化结果。
 
@@ -160,11 +184,12 @@ bash tests/prod_verify.sh
 ```
 tests/
 ├── conftest.py                  # external 标记自动跳过
-├── test_api.py                  # API 冒烟（本地 + 生产）
-├── test_rag_precision.py        # RAG 精准度（30+20+20 题）
-├── locustfile.py                # Locust 压测
-├── prod_verify.sh               # 生产环境巡检
-└── data/                        # 测试文档
+├── test_api.py                  # ① API 冒烟（本地 + 生产）
+├── test_rag_retriever.py        # ③ 离线评估（检索侧，无需 Key）
+├── test_rag_agent.py            # ④ 在线评估（Agent 行为，需 Key）
+├── locustfile.py                # ⑤ Locust 压测
+├── prod_verify.sh               # ⑥ 生产环境巡检
+└── data/                        # 测试文档（5 个鸭鸭知识文档）
 ```
 
 ---

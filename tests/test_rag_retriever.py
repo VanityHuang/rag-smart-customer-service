@@ -1,22 +1,19 @@
 """
-RAG 检索精准度评估 — 基于鸭鸭知识文档的全量测试
+离线评估 — 检索侧（Retriever）能力
 
-测试集：
-  - 30 个显式问题（直接检索文档原文）
-  - 20 个隐式问题（需要跨文档推理）
-  - 20 个域外噪声题（闲聊/操作指令，应拒答）
+评估对象：向量数据库的检索质量
+评估方式：纯向量搜索，不调用 LLM
+测试集：30 显式 + 20 隐式 + 20 噪声 = 70 题
+指标：Hit Rate@3、MRR、平均最高相似度
 
-产出：Hit Rate@3、MRR、平均最高相似度、联网兜底比例、拒答比例
-
-用法:
-    python -m pytest tests/test_rag_precision.py -v -s
+用法（无需 API Key）:
+    python -m pytest tests/test_rag_retriever.py -v -s
 """
 
 import json
 import sys
 import time
 from pathlib import Path
-from typing import List
 
 import pytest
 
@@ -25,10 +22,9 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 DATA_DIR = Path(__file__).parent / "data"
 
 # ══════════════════════════════════════════════════════════════
-# 测试集定义
+# 测试集（与 test_rag_agent.py 共享）
 # ══════════════════════════════════════════════════════════════
 
-# ── 5 个鸭鸭知识文档 ──
 SEED_FILES = [
     "鸭鸭云服务器产品规格.md",
     "鸭鸭科技常见问题手册.txt",
@@ -37,9 +33,8 @@ SEED_FILES = [
     "鸭鸭科技业务报告.png",
 ]
 
-# ── 30 个显式问题（答案直接来自文档原文）──
+# ── 30 个显式问题 ──
 EXPLICIT_QUESTIONS = [
-    # ── 产品规格.md ──
     {"question": "d1.small 实例的月费是多少", "expected": "99", "source": "鸭鸭云服务器产品规格.md"},
     {"question": "d1.xlarge 有多少核CPU", "expected": "8 核", "source": "鸭鸭云服务器产品规格.md"},
     {"question": "GPU型实例 g1.xlarge 配置了几个A10 GPU", "expected": "4×A10", "source": "鸭鸭云服务器产品规格.md"},
@@ -50,8 +45,6 @@ EXPLICIT_QUESTIONS = [
     {"question": "负载均衡单实例最大并发连接数是多少", "expected": "500 万", "source": "鸭鸭云服务器产品规格.md"},
     {"question": "DDoS高防最高防护能力是多少Gbps", "expected": "300 Gbps", "source": "鸭鸭云服务器产品规格.md"},
     {"question": "旗舰版技术支持的响应时间是多少", "expected": "15 分钟", "source": "鸭鸭云服务器产品规格.md"},
-
-    # ── 常见问题手册.txt ──
     {"question": "鸭鸭科技提供哪三大核心产品线", "expected": "鸭鸭 ERP、鸭鸭 CRM、鸭鸭 BI", "source": "鸭鸭科技常见问题手册.txt"},
     {"question": "SaaS云端部署的起步价是多少", "expected": "9800 元/年/10 用户", "source": "鸭鸭科技常见问题手册.txt"},
     {"question": "免费试用期是多少天", "expected": "14 天", "source": "鸭鸭科技常见问题手册.txt"},
@@ -62,8 +55,6 @@ EXPLICIT_QUESTIONS = [
     {"question": "3年合同享受几折优惠", "expected": "8 折", "source": "鸭鸭科技常见问题手册.txt"},
     {"question": "忘记密码后重置链接有效期是多久", "expected": "30 分钟", "source": "鸭鸭科技常见问题手册.txt"},
     {"question": "账号注销冷静期是多少天", "expected": "7 天", "source": "鸭鸭科技常见问题手册.txt"},
-
-    # ── 跨文件显式题 ──
     {"question": "内存型实例m1.large的内存是多少", "expected": "32 GB", "source": "鸭鸭云服务器产品规格.md"},
     {"question": "专业版技术支持的服务时间是什么", "expected": "工作日 8-22", "source": "鸭鸭云服务器产品规格.md"},
     {"question": "高效云盘的容量范围是多少", "expected": "20-32,768 GB", "source": "鸭鸭云服务器产品规格.md"},
@@ -76,7 +67,7 @@ EXPLICIT_QUESTIONS = [
     {"question": "数据加密存储层使用什么加密方式", "expected": "AES-256", "source": "鸭鸭科技常见问题手册.txt"},
 ]
 
-# ── 20 个隐式问题（需要跨文档推理或间接理解）──
+# ── 20 个隐式问题 ──
 IMPLICIT_QUESTIONS = [
     {"question": "搭建一个中小型网站每月最低需要多少钱", "expected": "199", "source": "鸭鸭云服务器产品规格.md"},
     {"question": "如果我需要跑Redis缓存服务，应该选哪种实例", "expected": "m1.medium", "source": "鸭鸭云服务器产品规格.md"},
@@ -100,38 +91,38 @@ IMPLICIT_QUESTIONS = [
     {"question": "游戏服务器应该选哪种计算型实例", "expected": "c1.xlarge", "source": "鸭鸭云服务器产品规格.md"},
 ]
 
-# ── 20 个域外噪声题（应触发拒答或拒绝）──
+# ── 20 个域外噪声题 ──
 NOISE_QUESTIONS = [
-    {"question": "今天天气怎么样", "expected": "拒答"},
-    {"question": "帮我写一首诗", "expected": "拒答"},
-    {"question": "怎么做红烧肉", "expected": "拒答"},
-    {"question": "推荐一部好看的电影", "expected": "拒答"},
-    {"question": "1+1等于几", "expected": "拒答"},
-    {"question": "你好", "expected": "拒答"},
-    {"question": "谢谢", "expected": "拒答"},
-    {"question": "你是谁", "expected": "拒答"},
-    {"question": "帮我发一封邮件给张三", "expected": "拒答"},
-    {"question": "下单买一台iPhone", "expected": "拒答"},
-    {"question": "帮我订机票去北京", "expected": "拒答"},
-    {"question": "股票行情如何", "expected": "拒答"},
-    {"question": "最近有什么新闻", "expected": "拒答"},
-    {"question": "讲个笑话", "expected": "拒答"},
-    {"question": "翻译这句话成英文", "expected": "拒答"},
-    {"question": "明天星期几", "expected": "拒答"},
-    {"question": "怎么减肥", "expected": "拒答"},
-    {"question": "推荐一本好书", "expected": "拒答"},
-    {"question": "唱歌给我听", "expected": "拒答"},
-    {"question": "帮我控制空调打开", "expected": "拒答"},
+    {"question": "今天天气怎么样", "expected": ""},
+    {"question": "帮我写一首诗", "expected": ""},
+    {"question": "怎么做红烧肉", "expected": ""},
+    {"question": "推荐一部好看的电影", "expected": ""},
+    {"question": "1+1等于几", "expected": ""},
+    {"question": "你好", "expected": ""},
+    {"question": "谢谢", "expected": ""},
+    {"question": "你是谁", "expected": ""},
+    {"question": "帮我发一封邮件给张三", "expected": ""},
+    {"question": "下单买一台iPhone", "expected": ""},
+    {"question": "帮我订机票去北京", "expected": ""},
+    {"question": "股票行情如何", "expected": ""},
+    {"question": "最近有什么新闻", "expected": ""},
+    {"question": "讲个笑话", "expected": ""},
+    {"question": "翻译这句话成英文", "expected": ""},
+    {"question": "明天星期几", "expected": ""},
+    {"question": "怎么减肥", "expected": ""},
+    {"question": "推荐一本好书", "expected": ""},
+    {"question": "唱歌给我听", "expected": ""},
+    {"question": "帮我控制空调打开", "expected": ""},
 ]
+
 
 # ══════════════════════════════════════════════════════════════
 # 评估逻辑
 # ══════════════════════════════════════════════════════════════
 
-
 def _setup_knowledge_base():
     """上传测试文档到知识库"""
-    from knowledge_base import KnowledgeBaseService, get_string_md5, check_md5
+    from knowledge_base import KnowledgeBaseService
 
     kb = KnowledgeBaseService()
     for filename in SEED_FILES:
@@ -144,112 +135,67 @@ def _setup_knowledge_base():
         print(f"  📄 {filename}: {result}")
 
 
-def _evaluate_questions(questions: list, label: str) -> dict:
-    """评估一组问题，返回统计结果"""
-    from rag_agent import RagAgentService
+def _evaluate_retriever(questions: list, label: str) -> dict:
+    """纯向量检索评估（不调 LLM）"""
     from vector_stores import VectorStoreService
     from langchain_community.embeddings import DashScopeEmbeddings
     import config_data as config
 
-    agent = RagAgentService()
     vector_service = VectorStoreService(
         embedding=DashScopeEmbeddings(model=config.embedding_model_name),
         collection_name="rag_admin",
         persist_directory="./data/chroma_db/admin",
     )
 
-    import os
-    has_api_key = bool(os.environ.get("DASHSCOPE_API_KEY"))
-
     total = len(questions)
     hits = 0
     reciprocal_ranks = []
     similarities = []
-    web_fallback_count = 0
-    refusal_count = 0
 
     for i, q in enumerate(questions):
         question = q["question"]
         expected = q["expected"]
-        source = q.get("source", "")
 
-        print(f"\n  [{label}] ({i+1}/{total}) {question}")
-
-        # 检索相似度（不需要 API Key）
         results = vector_service.vector_store.similarity_search_with_score(question, k=3)
+
         if results:
             best_score = results[0][1]
-            best_similarity = 1 - best_score  # 余弦距离 → 相似度
+            best_similarity = 1 - best_score
             similarities.append(best_similarity)
 
-            # Hit Rate@3: 期望内容是否在 top-3 中
             hit = False
             best_rank = None
             for rank, (doc, score) in enumerate(results, start=1):
-                content = doc.page_content
-                # 检查 expected 关键词是否出现在检索结果中
-                if expected and expected in content:
+                if expected and expected in doc.page_content:
                     hit = True
                     if best_rank is None:
                         best_rank = rank
             if hit:
                 hits += 1
-                rr = 1.0 / best_rank if best_rank else 0.0
-                reciprocal_ranks.append(rr)
+                reciprocal_ranks.append(1.0 / best_rank if best_rank else 0.0)
             else:
                 reciprocal_ranks.append(0.0)
 
-            print(f"    📊 top相似度={best_similarity:.4f} hit={'✅' if hit else '❌'}")
+            status = "✅" if hit else "❌"
+            print(f"  [{label}] ({i+1}/{total}) {question}")
+            print(f"    sim={best_similarity:.4f} {status}")
         else:
             similarities.append(0.0)
             reciprocal_ranks.append(0.0)
-            print(f"    📊 无检索结果")
-
-        # 调用 Agent，检测工具调用（需要 API Key）
-        if has_api_key:
-            start_time = time.time()
-            try:
-                answer = agent.invoke(question, f"eval_{label}_{i}")
-            except Exception as e:
-                answer = f"错误: {e}"
-            elapsed = time.time() - start_time
-
-            # 判断是否触发了联网搜索或拒答
-            answer_lower = answer.lower() if answer else ""
-            is_refusal = any(kw in answer for kw in [
-                "无法", "拒绝", "抱歉", "不能", "没有权限", "超出范围",
-                "不提供", "无法处理", "抱歉，我无法",
-            ])
-            is_web_fallback = "联网搜索" in answer or "网络搜索" in answer or "http" in answer_lower
-
-            if is_refusal:
-                refusal_count += 1
-                print(f"    🔴 拒答 ({elapsed:.1f}s)")
-            elif is_web_fallback:
-                web_fallback_count += 1
-                print(f"    🟡 联网兜底 ({elapsed:.1f}s)")
-            else:
-                print(f"    🟢 直接回答 ({elapsed:.1f}s)")
-        else:
-            print(f"    ⏭️  跳过 Agent 调用（无 API Key）")
+            print(f"  [{label}] ({i+1}/{total}) {question}")
+            print(f"    无结果 ❌")
 
     hit_rate = hits / total if total else 0.0
     mrr = sum(reciprocal_ranks) / len(reciprocal_ranks) if reciprocal_ranks else 0.0
     avg_sim = sum(similarities) / len(similarities) if similarities else 0.0
-    web_ratio = web_fallback_count / total if total else 0.0
-    refuse_ratio = refusal_count / total if total else 0.0
 
     return {
         "label": label,
         "total": total,
+        "hits": hits,
         "hit_rate": hit_rate,
         "mrr": mrr,
         "avg_similarity": avg_sim,
-        "web_fallback_ratio": web_ratio,
-        "refusal_ratio": refuse_ratio,
-        "hits": hits,
-        "web_fallback_count": web_fallback_count,
-        "refusal_count": refusal_count,
     }
 
 
@@ -257,66 +203,55 @@ def _evaluate_questions(questions: list, label: str) -> dict:
 # Pytest
 # ══════════════════════════════════════════════════════════════
 
-def test_rag_precision():
-    """RAG 检索精准度评估（向量检索部分无需 API Key，Agent 部分需要）"""
+def test_rag_retriever():
+    """离线评估：检索侧能力（无需 API Key）"""
     print("\n" + "=" * 60)
-    print("  RAG 检索精准度评估")
+    print("  离线评估 — 检索侧（Retriever）")
     print("=" * 60)
 
-    # 1. 上传测试文档
     print("\n📥 上传测试文档到知识库...")
     _setup_knowledge_base()
 
-    # 2. 评估三组问题
     print("\n🔍 评估显式问题 (30 题)...")
-    explicit = _evaluate_questions(EXPLICIT_QUESTIONS, "显式")
+    explicit = _evaluate_retriever(EXPLICIT_QUESTIONS, "显式")
 
     print("\n🔍 评估隐式问题 (20 题)...")
-    implicit = _evaluate_questions(IMPLICIT_QUESTIONS, "隐式")
+    implicit = _evaluate_retriever(IMPLICIT_QUESTIONS, "隐式")
 
     print("\n🔍 评估域外噪声题 (20 题)...")
-    noise = _evaluate_questions(NOISE_QUESTIONS, "噪声")
+    noise = _evaluate_retriever(NOISE_QUESTIONS, "噪声")
 
-    # 3. 输出报告
+    # 输出报告
     print("\n" + "=" * 60)
-    print("  评估报告")
+    print("  离线评估报告")
     print("=" * 60)
 
-    header = f"{'测试集':<12} {'Hit Rate@3':<12} {'MRR':<10} {'平均最高相似度':<16} {'联网兜底比例':<14} {'拒答比例':<10}"
+    header = f"{'测试集':<10} {'数量':<6} {'命中':<6} {'Hit Rate@3':<12} {'MRR':<10} {'平均最高相似度':<14}"
     print(f"\n{header}")
     print("-" * len(header))
 
     for r in [explicit, implicit, noise]:
         print(
-            f"{r['label']:<10} "
+            f"{r['label']:<8} "
+            f"{r['total']:<5} "
+            f"{r['hits']:<5} "
             f"{r['hit_rate']:<11.0%} "
             f"{r['mrr']:<9.2%} "
-            f"{r['avg_similarity']:<15.2%} "
-            f"{r['web_fallback_ratio']:<13.0%} "
-            f"{r['refusal_ratio']:<9.0%}"
+            f"{r['avg_similarity']:<13.4f}"
         )
 
-    print(f"\n  显式题命中: {explicit['hits']}/{explicit['total']}")
-    print(f"  隐式题命中: {implicit['hits']}/{implicit['total']}")
-    print(f"  噪声题拒答: {noise['refusal_count']}/{noise['total']}")
-
-    # 4. 写入 JSON 报告
+    # 写入报告
     report_dir = Path(__file__).parent.parent / "results"
     report_dir.mkdir(exist_ok=True)
-    report_path = report_dir / "rag_precision_report.json"
     report = {
-        "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
-        "config": {
-            "score_high": 0.2,
-            "score_low": 0.5,
-            "retriever_k": 3,
-        },
+        "type": "offline_retriever",
+        "config": {"score_high": 0.2, "score_low": 0.5, "retriever_k": 3},
         "results": [explicit, implicit, noise],
     }
+    report_path = report_dir / "rag_retriever_report.json"
     with open(report_path, "w", encoding="utf-8") as f:
         json.dump(report, f, ensure_ascii=False, indent=2)
     print(f"\n  📊 报告已保存: {report_path}")
 
-    # 5. 断言
+    # 断言
     assert explicit["hit_rate"] >= 0.8, f"显式题 Hit Rate 低于 80%: {explicit['hit_rate']:.0%}"
-    assert noise["refusal_ratio"] >= 0.7, f"噪声题拒答率低于 70%: {noise['refusal_ratio']:.0%}"
