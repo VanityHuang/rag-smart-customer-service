@@ -16,7 +16,7 @@ echo $DASHSCOPE_API_KEY   # 必须设置
 |------|------|----------|:----------:|
 | ① API 冒烟 | `pytest tests/test_api.py -v` | 全端点 + 认证 + 限流 | 是 |
 | ② Docker 构建 | `docker-compose up --build` | 镜像构建 + 容器启动 | 是 |
-| ③ RAG 精准度 | `pytest tests/test_rag_precision.py -v -s` | 显式/隐式/噪声题全量评估 | 是 |
+| ③ RAG 精准度 | `pytest tests/test_rag_precision.py -v -s` | 向量检索评估（无需 Key）+ Agent 行为检测（需 Key） | 部分 |
 | ④ Locust 压测 | `locust -f tests/locustfile.py` | 系统稳定性与性能 | 是 |
 | ⑤ 生产验证 | `bash tests/prod_verify.sh` | 线上 API + 前端 + 容器 | 否 |
 
