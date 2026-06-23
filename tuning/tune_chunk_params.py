@@ -245,7 +245,10 @@ def _build_and_evaluate(docs: dict, chunk_size: int, chunk_overlap: int) -> dict
         total_chunks = 0
         for filename, text in docs.items():
             chunks = splitter.split_text(text) if len(text) > 1000 else [text]
-            chroma.add_texts(chunks, metadatas=[{"source": filename}] * len(chunks))
+            BATCH_SIZE = 5000
+            for batch_start in range(0, len(chunks), BATCH_SIZE):
+                batch = chunks[batch_start:batch_start + BATCH_SIZE]
+                chroma.add_texts(batch, metadatas=[{"source": filename}] * len(batch))
             total_chunks += len(chunks)
 
         # 评估
