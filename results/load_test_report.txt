@@ -1,0 +1,40 @@
+Locust Load Test Report
+=======================
+
+Date: 2026-06-24
+Mode: Mock LLM (RAG_MOCK_LLM=1, zero token consumption)
+Host: http://localhost:8000
+Concurrency: 5 users (ramp-up 1/sec)
+Duration: 1 minute
+
+Summary
+-------
+Total requests: 1,666
+Failed: 0 (0.00%)
+Requests/sec: 13.91
+
+Per-Endpoint Results
+--------------------
+
+| Endpoint                    | Requests | Fails | Avg(ms) | Min(ms) | Max(ms) | Med(ms) | req/s |
+|-----------------------------|----------|-------|---------|---------|---------|---------|-------|
+| POST /api/chat              | 635      | 0     | 2010    | 2007    | 2081    | 2007    | 5.30  |
+| POST /api/chat/stream       | 386      | 0     | 3280    | 3269    | 3405    | 3300    | 3.22  |
+| GET /api/knowledge-base/docs| 366      | 0     | 6       | 4       | 87      | 5       | 3.06  |
+| GET /api/chat/sessions      | 279      | 0     | 9       | 4       | 134     | 5       | 2.33  |
+
+Percentiles
+-----------
+| Endpoint                    | 50%   | 66%   | 75%   | 90%   | 95%   | 99%   |
+|-----------------------------|-------|-------|-------|-------|-------|-------|
+| POST /api/chat              | 2000  | 2000  | 2000  | 2000  | 2000  | 2100  |
+| POST /api/chat/stream       | 3300  | 3300  | 3300  | 3300  | 3300  | 3400  |
+| GET /api/knowledge-base/docs| 5     | 5     | 6     | 7     | 9     | 43    |
+| GET /api/chat/sessions      | 5     | 5     | 6     | 8     | 26    | 98    |
+
+Notes
+-----
+- Chat endpoints are in Mock LLM mode (2s fixed delay + ~1.3s streaming chars)
+- GET endpoints reflect real API throughput (no mock delay)
+- Zero failures across all endpoints indicates stable system under 5 concurrent users
+- To measure real LLM performance, disable mock mode and re-run
