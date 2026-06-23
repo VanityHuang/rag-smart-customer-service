@@ -2,33 +2,32 @@
   {
     "category": "T1",
     "category_name": "内部知识型",
-    "description": "验证模型没有把内部私密问题乱发到互联网",
-    "expected_tools": ["knowledge_base_search"],
-    "pass_criteria": { "web_search_misroute": "< 5%" },
+    "description": "验证 RAG 优先：必须调 knowledge_base_search",
+    "must_have": ["knowledge_base_search"],
+    "allow": ["web_search"],
+    "forbid": [],
     "cases": [
       {"question": "鸭鸭科技的外部协作者能看通讯录吗"},
       {"question": "鸭鸭科技提供哪三大核心产品线"},
       {"question": "d1.small 实例的月费是多少"},
       {"question": "免费试用期是多少天"},
       {"question": "技术支持热线电话是多少"},
-      {"question": "数据存储在阿里云哪个区域"},
+      {"question": "数据加密传输层使用什么协议"},
       {"question": "忘记密码后重置链接有效期是多久"},
       {"question": "账号注销冷静期是多少天"},
       {"question": "SSD云盘的IOPS是多少"},
-      {"question": "超高IOPS盘的吞吐量是多少"},
-      {"question": "对象存储中归档存储的单价是多少"},
       {"question": "DDoS高防最高防护能力是多少Gbps"},
       {"question": "旗舰版技术支持的响应时间是多少"},
-      {"question": "内存型实例m1.large的内存是多少"},
-      {"question": "高效云盘的容量范围是多少"}
+      {"question": "内存型实例m1.large的内存是多少"}
     ]
   },
   {
     "category": "T2",
     "category_name": "实时信息型",
-    "description": "验证时效性问题的直连路由是否生效",
-    "expected_tools": ["web_search"],
-    "pass_criteria": { "web_search_miss": "0%" },
+    "description": "必须先后调 RAG 和联网搜索",
+    "must_have": ["knowledge_base_search", "web_search"],
+    "allow": [],
+    "forbid": [],
     "cases": [
       {"question": "今天深圳天气怎么样"},
       {"question": "最新人民币兑美元汇率"},
@@ -44,10 +43,11 @@
   },
   {
     "category": "T3",
-    "category_name": "模糊通用型",
-    "description": "验证 RAG 优先、联网兜底的优先级逻辑",
-    "expected_tools": ["knowledge_base_search", "web_search"],
-    "pass_criteria": { "always_call_kb_first": "应优先调知识库" },
+    "category_name": "通用开放型",
+    "description": "必须先查 RAG，允许联网兜底",
+    "must_have": ["knowledge_base_search"],
+    "allow": ["web_search"],
+    "forbid": [],
     "cases": [
       {"question": "什么是人工智能"},
       {"question": "如何提高团队效率"},
@@ -63,10 +63,29 @@
   },
   {
     "category": "T4",
+    "category_name": "纯计算型",
+    "description": "必须调 calculator，走计算",
+    "must_have": ["calculator"],
+    "allow": ["knowledge_base_search", "web_search"],
+    "forbid": [],
+    "cases": [
+      {"question": "12345 * 6789 等于多少"},
+      {"question": "(100+200)/3 是多少"},
+      {"question": "25 * 4 + 100 等于几"},
+      {"question": "1024 除以 8 是多少"},
+      {"question": "9 的平方根是多少"},
+      {"question": "15% 的 200 是多少"},
+      {"question": "3 的 5 次方等于多少"},
+      {"question": "500 减 237 等于多少"}
+    ]
+  },
+  {
+    "category": "T5",
     "category_name": "边界外/拒答型",
-    "description": "验证护栏机制，防止乱调工具和浪费 Token",
-    "expected_tools": [],
-    "pass_criteria": { "tool_misroute": "0%", "verbose_refusal": "0%" },
+    "description": "禁止调用任何工具，回答极简短",
+    "must_have": [],
+    "allow": [],
+    "forbid": ["knowledge_base_search", "web_search", "calculator"],
     "cases": [
       {"question": "帮我写一份年报"},
       {"question": "啊吧啊吧"},
