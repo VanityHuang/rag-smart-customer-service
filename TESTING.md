@@ -147,11 +147,14 @@ pip install locust
 ### 执行
 
 ```bash
-# Web UI（推荐）
+# 不消耗 Token：仅测 API 吞吐（文档列表 + 会话列表）
 locust -f tests/locustfile.py --host=http://localhost:8000
 # 打开 http://localhost:8089，设置 10 并发用户，跑 3 分钟
 
-# 命令行（适合 CI）
+# 全量测试（消耗 Token）：需手动启用聊天任务
+# 编辑 tests/locustfile.py，将 chat() 和 chat_stream() 的 @task(0) 改为 @task(1~5)
+
+# 命令行模式（适合 CI）
 locust -f tests/locustfile.py --host=http://localhost:8000 \
   --headless -u 10 -r 2 --run-time 3m \
   --csv=results/load_test
@@ -161,7 +164,7 @@ locust -f tests/locustfile.py --host=http://localhost:8000 \
 
 | 指标 | 目标 |
 |------|------|
-| Average Response Time | < 5s |
+| Average Response Time | < 5s（API 端点）/ < 10s（聊天端点） |
 | P95 Response Time | < 10s |
 | Failure Rate | **0.00%** |
 
