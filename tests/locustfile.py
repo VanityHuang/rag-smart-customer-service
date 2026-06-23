@@ -14,7 +14,7 @@ Locust 压测脚本 — 系统稳定性与性能测试
         --headless -u 10 -r 2 --run-time 3m --csv=results/load_test
 
 环境变量:
-    RAG_LOCUST_TOKEN — Bearer token（默认 guest）
+    RAG_LOCUST_TOKEN — Bearer token（默认 guest123）
     RAG_MOCK_LLM=1 — 启用 Mock LLM 模式，不消耗 Token 但走通全链路
 """
 
@@ -31,7 +31,7 @@ class RAGUser(HttpUser):
 
     def on_start(self):
         """用户启动时获取 token"""
-        self.token = os.environ.get("RAG_LOCUST_TOKEN", "guest")
+        self.token = os.environ.get("RAG_LOCUST_TOKEN", "guest123")
         self.auth_headers = {"Authorization": f"Bearer {self.token}"}
         self.session_id = f"locust_{uuid.uuid4().hex[:8]}"
 
@@ -53,12 +53,9 @@ class RAGUser(HttpUser):
             name="/api/chat/sessions",
         )
 
-    # ── 以下任务会消耗 LLM Token，默认关闭。
-    # 设置 RAG_MOCK_LLM=1 启用 Mock 模式（不消耗 Token）后，
-    # 将 @task(0) 改为 @task(1~5) 可启用。
-    # @task(0)
+    @task(5)
     def chat(self):
-        """聊天（消耗 Token，默认关闭）"""
+        """聊天（RAG_MOCK_LLM=1 时不消耗 Token）"""
         self.client.post(
             "/api/chat",
             json={"message": "你好", "session_id": self.session_id},
@@ -66,9 +63,9 @@ class RAGUser(HttpUser):
             name="/api/chat [你好]",
         )
 
-    # @task(0)
+    @task(3)
     def chat_stream(self):
-        """流式聊天（消耗 Token，默认关闭）"""
+        """流式聊天（RAG_MOCK_LLM=1 时不消耗 Token）"""
         self.client.post(
             "/api/chat/stream",
             json={"message": "1+1=?", "session_id": self.session_id},
