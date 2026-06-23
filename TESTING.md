@@ -5,7 +5,8 @@
 ## 前置条件
 
 ```bash
-echo $DASHSCOPE_API_KEY   # 必须设置
+echo $DASHSCOPE_API_KEY      # 对话模型（DashScope）
+echo $SILICONFLOW_API_KEY    # 嵌入模型（硅基流动）
 ```
 
 ---
@@ -15,7 +16,7 @@ echo $DASHSCOPE_API_KEY   # 必须设置
 | 层级 | 命令 | 测试内容 | 需 API Key |
 |------|------|----------|:----------:|
 | ① API 冒烟 | `pytest tests/test_api.py -v` | 全端点 + 认证 + 限流 | 是 |
-| ② Docker 构建 | `docker-compose up --build` | 镜像构建 + 容器启动 | 是 |
+| ② Docker 构建 | `docker-compose up --build` | 镜像构建 + 容器启动 | 否 |
 | ③ 离线评估 | `pytest tests/test_rag_retriever.py -v -s` | 检索侧能力：Hit Rate / MRR / 相似度 | 否 |
 | ④ 在线评估 | `pytest tests/test_rag_agent.py -v -s` | Agent 行为：联网兜底 / 拒答比例 | 是 |
 | ⑤ Locust 压测 | `locust -f tests/locustfile.py` | 系统稳定性与性能 | Mock 模式无需 Token |
@@ -105,34 +106,37 @@ python -m pytest tests/test_rag_retriever.py -v -s
 
 ---
 
-## 第 ④ 层：在线评估（Agent 行为检测）
+## 第 ④ 层：在线评估（工具调用刚性评价）
 
-通过完整 Agent 链路（Retriever + LLM + 工具路由），统计联网搜索和拒答行为。需要 API Key。
+通过完整 Agent 链路（Retriever + LLM + 工具路由），基于工具调用检测而非文本关键词判断。需要 API Key。
 
 ```bash
 python -m pytest tests/test_rag_agent.py -v -s
 ```
 
-精选测试集：10 显式 + 10 隐式 + 10 噪声 = 30 题
+50 题精选测试集，分 5 类：
+
+| 类别 | 数量 | 必须调用的工具 | 说明 |
+|------|------|----------------|------|
+| T1 内部知识型 | 12 | `knowledge_base_search` | 验证 RAG 优先 |
+| T2 实时信息型 | 9 | `knowledge_base_search` + `web_search` | 两者缺一不可 |
+| T3 通用开放型 | 11 | `knowledge_base_search` | 先查 RAG，允许联网 |
+| T4 纯计算型 | 8 | `calculator` | 必须走计算器 |
+| T5 边界外/拒答型 | 10 | 无 | 工具为空 + 降级引导 |
 
 产出报告：
 
 ```
-测试集    数量  直接回答  联网兜底  拒答
-显式      10    8        2        0
-隐式      10    6        3        1
-噪声      10    0        1        9
-
-显式: 直接回答 80% | 联网兜底 20% | 拒答 0%
-隐式: 直接回答 60% | 联网兜底 30% | 拒答 10%
-噪声: 直接回答 0% | 联网兜底 10% | 拒答 90%
+T1: 12/12 ✅ must_have={'knowledge_base_search'}
+T2: 9/9  ✅ must_have={'knowledge_base_search', 'web_search'}
+T3: 11/11 ✅ must_have={'knowledge_base_search'}
+T4: 8/8  ✅ must_have={'calculator'}
+T5: 10/10 ✅ must_have=set()
 ```
 
-- **直接回答**：Agent 仅用知识库内容回答
-- **联网兜底**：Agent 调用了 web_search 补充信息
-- **拒答**：Agent 拒绝回答
-
-报告保存到 `results/rag_agent_report.json`。
+- **工具调用准确率**：实际调用的工具必须包含 must_have 集合
+- **降级引导**：T5 禁止调用任何工具，回复引导语
+- **禁止幻觉回流**：T1 检测到 web_search 直接判 FAIL
 
 ---
 
@@ -204,7 +208,8 @@ tests/
 
 | 变量 | 位置 | 用途 | 默认值 |
 |------|------|------|--------|
-| `DASHSCOPE_API_KEY` | `docker/.env` | 阿里云 DashScope API Key | 必填 |
+| `DASHSCOPE_API_KEY` | `docker/.env` | 阿里云 DashScope API Key（对话模型） | 必填 |
+| `SILICONFLOW_API_KEY` | `docker/.env` | 硅基流动 API Key（嵌入模型） | 必填 |
 | `ADMIN_TOKEN` | `docker/.env` | 管理员密码 | 必填 |
 | `GUEST_TOKEN` | `docker/.env` | 访客密码 | 必填 |
 | `RAG_PROD_URL` | `docker/.env` | 冒烟测试生产地址 | `https://yellowduck.top/rag` |
