@@ -25,6 +25,7 @@ services:
       - SILICONFLOW_API_KEY=${SILICONFLOW_API_KEY}
       - ADMIN_TOKEN=${ADMIN_TOKEN}
       - GUEST_TOKEN=${GUEST_TOKEN}
+      - RAG_MOCK_LLM=${RAG_MOCK_LLM:-0}
     command: uvicorn api.server:app --host 0.0.0.0 --port 8000 --reload
     mem_limit: 1g
     user: "1000:1000"
