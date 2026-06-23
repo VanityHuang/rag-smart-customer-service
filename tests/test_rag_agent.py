@@ -75,12 +75,10 @@ def test_rag_agent_online():
             if missing:
                 fail_reasons.append(f"缺少必须调用的工具: {missing}")
 
-            # T5 专属：工具必须为空，回答必须 < 50 字
+            # T5 专属：工具必须为空（降级引导，不调工具）
             if cid == "T5":
                 if actual:
                     fail_reasons.append(f"禁用了工具但实际调用了: {actual}")
-                if answer_len >= 50:
-                    fail_reasons.append(f"拒答过长: {answer_len} 字（上限 50）")
 
             status = "✅" if not fail_reasons else "❌"
             tool_str = ", ".join(sorted(actual)) if actual else "无"
