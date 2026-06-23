@@ -132,6 +132,37 @@ ALL_QUESTIONS = (
 )
 
 
+# ── ROUGE-L 文本重叠率 ──
+def _lcs_length(x: str, y: str) -> int:
+    """最长公共子序列长度（动态规划）"""
+    m, n = len(x), len(y)
+    if m == 0 or n == 0:
+        return 0
+    dp = [[0] * (n + 1) for _ in range(m + 1)]
+    for i in range(1, m + 1):
+        for j in range(1, n + 1):
+            if x[i - 1] == y[j - 1]:
+                dp[i][j] = dp[i - 1][j - 1] + 1
+            else:
+                dp[i][j] = max(dp[i - 1][j], dp[i][j - 1])
+    return dp[m][n]
+
+
+def rouge_l_f1(expected: str, content: str) -> float:
+    """计算 ROUGE-L F1 分数（基于字符级 LCS）"""
+    if not expected or not content:
+        return 0.0
+    lcs = _lcs_length(expected, content)
+    precision = lcs / len(expected) if len(expected) > 0 else 0.0
+    recall = lcs / len(content) if len(content) > 0 else 0.0
+    if precision + recall == 0:
+        return 0.0
+    return 2 * precision * recall / (precision + recall)
+
+
+ROUGE_L_THRESHOLD = 0.4  # ROUGE-L F1 >= 0.4 视为命中
+
+
 # ══════════════════════════════════════════════════════════════
 # 核心逻辑
 # ══════════════════════════════════════════════════════════════
@@ -209,7 +240,9 @@ def _build_and_evaluate(docs: dict, chunk_size: int, chunk_overlap: int) -> dict
                 hit = False
                 best_rank = None
                 for rank, (doc, score) in enumerate(results, start=1):
-                    if q["expected"] and q["expected"] in doc.page_content:
+                    expected = q["expected"]
+                    content = doc.page_content
+                    if expected and rouge_l_f1(expected, content) >= ROUGE_L_THRESHOLD:
                         hit = True
                         if best_rank is None:
                             best_rank = rank
@@ -236,7 +269,7 @@ def _build_and_evaluate(docs: dict, chunk_size: int, chunk_overlap: int) -> dict
                     hit = False
                     best_rank = None
                     for rank, (doc, score) in enumerate(results, start=1):
-                        if q["expected"] and q["expected"] in doc.page_content:
+                        if q["expected"] and rouge_l_f1(q["expected"], doc.page_content) >= ROUGE_L_THRESHOLD:
                             hit = True
                             if best_rank is None:
                                 best_rank = rank
