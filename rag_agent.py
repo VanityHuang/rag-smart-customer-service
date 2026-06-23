@@ -1,10 +1,10 @@
 """
 RAG Agent Service — 基于 Function Calling 的自定义 Agent 循环
-使用 ChatTongyi.bind_tools() + 手动迭代循环，0 额外依赖
+使用 ChatOpenAI.bind_tools() + 手动迭代循环，0 额外依赖
 """
 import logging
 
-from langchain_community.chat_models import ChatTongyi
+from langchain_openai import ChatOpenAI
 from langchain_community.embeddings import DashScopeEmbeddings
 from langchain_core.messages import (
     AIMessage, HumanMessage, SystemMessage, ToolMessage
@@ -27,10 +27,12 @@ class RagAgentService:
         self.vector_service = vector_service or VectorStoreService(
             embedding=config.get_embedding_model()
         )
-        self.chat_model = ChatTongyi(
+        self.chat_model = ChatOpenAI(
             model=config.chat_model_name,
             temperature=0,
             streaming=True,
+            api_key=config.dashscope_api_key,
+            base_url=config.chat_base_url,
         )
         self.tools = self._create_tools()
         self.tool_map = {t.name: t for t in self.tools}

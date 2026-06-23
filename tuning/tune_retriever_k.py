@@ -356,10 +356,11 @@ def phase_offline():
 
 def _judge_quality(question: str, label: str, answer: str) -> float:
     """LLM-as-Judge：对 Agent 回答质量打分 0-5"""
-    from langchain_community.chat_models import ChatTongyi
+    from langchain_openai import ChatOpenAI
     import config_data as config
 
-    judge = ChatTongyi(model=config.chat_model_name, temperature=0)
+    judge = ChatOpenAI(model=config.chat_model_name, temperature=0,
+                       api_key=config.dashscope_api_key, base_url=config.chat_base_url)
 
     prompt = f"""你是一个 RAG 系统评估员。请对以下回答进行打分（0-5分）。
 
