@@ -18,7 +18,7 @@ echo $DASHSCOPE_API_KEY   # 必须设置
 | ② Docker 构建 | `docker-compose up --build` | 镜像构建 + 容器启动 | 是 |
 | ③ 离线评估 | `pytest tests/test_rag_retriever.py -v -s` | 检索侧能力：Hit Rate / MRR / 相似度 | 否 |
 | ④ 在线评估 | `pytest tests/test_rag_agent.py -v -s` | Agent 行为：联网兜底 / 拒答比例 | 是 |
-| ⑤ Locust 压测 | `locust -f tests/locustfile.py` | 系统稳定性与性能 | 是 |
+| ⑤ Locust 压测 | `locust -f tests/locustfile.py` | 系统稳定性与性能 | Mock 模式无需 Token |
 | ⑥ 生产验证 | `bash tests/prod_verify.sh` | 线上 API + 前端 + 容器 | 否 |
 
 ---
@@ -147,14 +147,17 @@ pip install locust
 ### 执行
 
 ```bash
-# 不消耗 Token：仅测 API 吞吐（文档列表 + 会话列表）
-locust -f tests/locustfile.py --host=http://localhost:8000
-# 打开 http://localhost:8089，设置 10 并发用户，跑 3 分钟
+# Mock 模式（不消耗 Token，走通全链路）
+# 先启动容器
+RAG_MOCK_LLM=1 sudo env docker compose -f docker/docker-compose.yml up -d
 
-# 全量测试（消耗 Token）：需手动启用聊天任务
-# 编辑 tests/locustfile.py，将 chat() 和 chat_stream() 的 @task(0) 改为 @task(1~5)
+# 再跑压测
+RAG_LOCUST_TOKEN=admin2026 locust -f tests/locustfile.py \
+  --host=http://localhost:8000 \
+  --headless -u 5 -r 1 --run-time 1m
 
-# 命令行模式（适合 CI）
+# 正常模式（消耗 Token）
+sudo docker compose -f docker/docker-compose.yml restart
 locust -f tests/locustfile.py --host=http://localhost:8000 \
   --headless -u 10 -r 2 --run-time 3m \
   --csv=results/load_test

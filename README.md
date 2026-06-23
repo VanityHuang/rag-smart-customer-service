@@ -7,8 +7,8 @@
 | 层 | 技术 |
 |------|------|
 | Agent 框架 | LangChain（`bind_tools` + 自定义 Agent 循环） |
-| 对话模型 | 通义千问 `qwen3-max`（阿里云 DashScope） |
-| 嵌入模型 | `text-embedding-v4`（阿里云 DashScope） |
+| 对话模型 | `qwen3.5-flash`（DashScope OpenAI 兼容接口） |
+| 嵌入模型 | `BAAI/bge-large-zh-v1.5`（硅基流动） |
 | 向量数据库 | Chroma（本地持久化） |
 | 文档解析 | PyMuPDF（PDF）、python-docx（DOCX）、RapidOCR（图片 OCR，ONNX Runtime） |
 | 前端 | 静态 HTML/CSS/JS（nginx 直接 serving） |
@@ -138,17 +138,22 @@ RAG/
 6 层结果类测试体系，详见 [TESTING.md](TESTING.md)：
 
 ```bash
+# 离线评估（检索质量，无需 API Key）
+python -m pytest tests/test_rag_retriever.py -v -s
+
+# 在线评估（Agent 行为，需 API Key）
+python -m pytest tests/test_rag_agent.py -v -s
+
 # API 冒烟测试（全端点 + 认证 + 限流）
 python -m pytest tests/test_api.py -v
 
-# Locust 压测（10 并发，3 分钟）
-locust -f tests/locustfile.py --host=http://localhost:8000
+# Locust 压测（Mock 模式 0 Token 消耗）
+RAG_MOCK_LLM=1 RAG_LOCUST_TOKEN=admin2026 locust -f tests/locustfile.py \
+  --host=http://localhost:8000 --headless -u 5 -r 1 --run-time 1m
 
-# RAG 参数遍历（9 种 chunk_size × overlap 组合）
-python -m pytest tests/test_rag_precision_grid.py -v
-
-# RAG 评估
-python evaluation.py
+# 参数调优
+python tuning/tune_chunk_params.py --fast
+python tuning/tune_retriever_k.py --phase offline
 
 # 生产环境巡检
 bash tests/prod_verify.sh
@@ -211,9 +216,10 @@ sudo docker compose up -d
 ### 环境变量
 
 存储在 `docker/.env`，docker-compose 自动读取：
-- `DASHSCOPE_API_KEY`：阿里云 DashScope API Key
-- `ADMIN_TOKEN`：管理员密码（完全访问所有功能）
-- `GUEST_TOKEN`：访客密码（功能一致，每小时 10 次 IP 限流，数据隔离）
+- `DASHSCOPE_API_KEY`：阿里云 DashScope API Key（对话模型）
+- `SILICONFLOW_API_KEY`：硅基流动 API Key（嵌入模型）
+- `ADMIN_TOKEN`：管理员密码
+- `GUEST_TOKEN`：访客密码
 - `RAG_PROD_URL`：冒烟测试生产地址
 - `RAG_TEST_TOKEN`：冒烟测试 Bearer token
 

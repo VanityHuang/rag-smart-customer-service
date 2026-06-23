@@ -11,10 +11,9 @@
 - **语言**: Python 3.12（`.python-version`）
 - **Agent 框架**: LangChain（`bind_tools` + 自定义 Agent 循环）
 - **向量数据库**: Chroma（本地持久化）
-- **嵌入模型**: DashScopeEmbeddings（`text-embedding-v4`，阿里云）
-- **对话模型**: ChatTongyi（`qwen3-max-preview`，阿里云通义），必须传 `streaming=True` 否则 `stream()` 降级为非流式
-- **UI（开发）**: Streamlit（两个独立应用）
-- **UI（生产）**: 静态 HTML/CSS/JS（nginx serving），marked.js Markdown 渲染，SSE 流式消费
+- **嵌入模型**: SiliconFlow（`BAAI/bge-large-zh-v1.5`，OpenAI 兼容接口）
+- **对话模型**: ChatOpenAI（`qwen3.5-flash`，DashScope OpenAI 兼容接口）
+- **UI**: 静态 HTML/CSS/JS（nginx serving），marked.js Markdown 渲染，SSE 流式消费
 - **API**: FastAPI
 - **流式响应**: SSE（Server-Sent Events），nginx `proxy_buffering off`
 - **认证**: Bearer Token 双角色认证（`ADMIN_TOKEN` / `GUEST_TOKEN` 环境变量，密码只在 `.env` 中配置，Python 代码零硬编码）
@@ -33,30 +32,29 @@
 | `config_data.py` | 所有配置常量（模型名称、分块参数、Agent 配置、API 配置、双角色 token） |
 | `file_history_store.py` | `FileChatMessageHistory`（LangChain 兼容）+ `SessionsMetadata`（会话元数据注册表，角色化存储路径） |
 | `evaluation.py` | RAG 评估体系 — Hit Rate、MRR、检索延迟 |
-| `api/` | FastAPI 后端 — `server.py`（入口 + Auth 中间件）、`chat.py`（角色化聊天端点 + 输入内容前置拦截）、`knowledge_base.py`（角色化 KB 管理）、`auth.py`（角色认证）、`rate_limit.py`（guest IP 限流）、`middleware.py`（认证中间件）、`deps.py`（角色服务工厂） |
-| `tests/` | 测试脚本 — `test_api.py`（API 冒烟，覆盖全部端点 + 认证 + 限流）、`locustfile.py`（Locust 压测）、`test_rag_precision_grid.py`（RAG 参数遍历）、`prod_verify.sh`（生产环境巡检）、`data/`（测试用文档） |
-| `bug_and_fix.md` | Bug 修复记录（Token 截断 bug、Agent 空回答 bug） |
-| `docker/` | Docker 配置 — `Dockerfile`（apt 阿里云镜像 + build-essential）+ `docker-compose.yml`（127.0.0.1:8000 + 1GB 内存限制） |
-| `web/` | 生产环境静态前端 — `index.html`（聊天界面）、`upload.html`（知识库管理），部署时复制到 nginx serving 目录 |
-| `docs/` | 项目文档 — `diagrams/` 包含 4 张 Mermaid 架构图（架构总览/模块依赖/数据流/部署） |
+| `api/` | FastAPI 后端 — `server.py`（入口 + Auth 中间件）、`chat.py`（角色化聊天端点 + 输入校验 + 前置拦截）、`knowledge_base.py`（角色化 KB 管理）、`auth.py`（角色认证）、`rate_limit.py`（guest IP 限流）、`middleware.py`（认证中间件）、`deps.py`（角色服务工厂） |
+| `tests/` | 测试脚本 — `test_api.py`（API 冒烟）、`test_rag_retriever.py`（离线评估）、`test_rag_agent.py`（在线评估）、`locustfile.py`（压测）、`prod_verify.sh`（生产巡检）、`data/`（测试文档） |
+| `tuning/` | 参数调优脚本 — `tune_chunk_params.py`（chunk_size/overlap 遍历）、`tune_retriever_k.py`（retriever_k 调优）、`results/`（调优报告） |
+| `bug_and_fix.md` | Bug 修复记录 |
+| `docker/` | Docker 配置 — `Dockerfile`、`docker-compose.yml`、`.env` |
+| `web/` | 静态前端 — `index.html`（聊天）、`upload.html`（知识库管理） |
+| `docs/` | 架构文档 + Mermaid 图 |
 | `/etc/nginx/sites-available/<project>` | nginx 反代配置 — `/rag/api/` → Docker、`/rag/` → `web/` 静态文件 |
 | `/etc/systemd/system/rag-agent.service` | systemd 服务 — 管理 Docker 容器生命周期 |
 | `data/` | 运行时数据 — `chroma_db/{admin,guest}/`（角色化向量库）、`chat_history/{admin,guest}/`（角色化聊天记录 + 元数据）、`md5_{admin,guest}.txt`（角色化 MD5 去重）、`rate_limit.json`（guest 限流计数） |
 | `requirements.txt` | Python 依赖清单 |
-| `TESTING.md` | 6 层结果类测试体系指南（API 冒烟 / Docker 构建 / RAG 评估 / 压测 / 参数遍历 / 生产验证） |
+| `TESTING.md` | 6 层结果类测试体系指南 |
 | `pytest.ini` | Pytest 配置（`addopts = -v --tb=short`，定义 `external` 标记） |
 
 ## 架构流程
 
-1. **知识库导入**：`ui/app_file_uploader.py` → `file_parser.py`（多格式解析）→ `knowledge_base.py`（文本分割、MD5 去重、嵌入 + 存入 Chroma）
+1. **知识库导入**：`web/upload.html` → API → `file_parser.py`（解析）→ `knowledge_base.py`（分割/嵌入/存入 Chroma）
 
-2. **会话管理**：前端自动创建 session_id → 首次对话后 LLM 生成标题 → `SessionsMetadata` 注册 → 侧边栏显示列表，支持重命名/删除/切换
+2. **会话管理**：前端自动创建 session_id → 首次对话后 LLM 生成标题 → `SessionsMetadata` 注册 → 侧边栏列表
 
-3. **对话问答**：`ui/app_qa.py` 支持两种运行模式（`USE_API` 开关）：
-   - **Direct Mode**（默认，`USE_API = False`）：直接 import `RagAgentService`，本地调用
-   - **API Mode**（`USE_API = True`）：通过 `requests` 调用 FastAPI 后端（需先启动 API 服务）
+3. **对话问答**：前端 → `POST /api/chat` 或 `/api/chat/stream` → FastAPI → `RagAgentService`
    
-   Agent 循环：SystemPrompt + 历史消息 + 用户输入 → `ChatTongyi.bind_tools([kb_search, web_search, calc])`
+   Agent 循环：SystemPrompt + 历史 + 用户输入 → `ChatOpenAI.bind_tools([kb_search, web_search, calc])`
    - 有 tool_calls → 执行工具 → ToolMessage 追加 → 继续循环（最多 `agent_max_iterations` 轮）
    - 无 tool_calls → 返回最终回答 → 保存到 FileChatMessageHistory
 
@@ -94,9 +92,11 @@
 
 检索：
 - `retriever_k`（15）：每次查询检索的文档数量（调优推荐）
+- `score_high`（0.45）：余弦距离阈值，低于此值为高分命中（相似度 > 0.55）
+- `score_low`（0.55）：余弦距离阈值，低于此值为中分模糊（相似度 > 0.45）
 
 Agent：
-- `AGENT_SYSTEM_PROMPT`：Agent 系统提示词（工具使用规则 + 拒答规则）
+- `AGENT_SYSTEM_PROMPT`：Agent 系统提示词（工具使用规则 + 拒答规则 + 时效性规则）
 - `agent_max_iterations`（5）：Agent 最大工具调用轮数
 - `agent_verbose`（True）：是否打印每次工具调用的日志
 - `MAX_HISTORY_ROUNDS`（5）：保留最近 5 轮对话上下文
@@ -105,12 +105,9 @@ Agent：
 - `web_search_max_results`（5）：联网搜索返回的最大结果数
 
 模型：
-- 嵌入：`text-embedding-v4`
-- 对话：`qwen3-max`
-
-OCR：
-- `ocr_language`（`"ch"`）：RapidOCR 语言参数（支持中英文）
-- `ocr_confidence_threshold`（0.5）：RapidOCR 置信度阈值
+- 嵌入：`BAAI/bge-large-zh-v1.5`（硅基流动）
+- 对话：`qwen3.5-flash`（DashScope OpenAI 兼容接口）
+- Mock 模式：`RAG_MOCK_LLM=1`（压测用，不消耗 Token）
 
 Auth：
 - `admin_token`（通过 `ADMIN_TOKEN` 环境变量配置）：管理员密码
@@ -122,23 +119,28 @@ Auth：
 所有命令从仓库根目录执行：
 
 ```bash
-# 启动 FastAPI 后端（端口 8000）
-python -m uvicorn api.server:app --reload
-
-# Docker 全量启动
+# Docker 启动
 cd docker && docker-compose up --build
+
+# Docker Mock 模式（压测，不消耗 Token）
+RAG_MOCK_LLM=1 sudo docker compose -f docker/docker-compose.yml up -d
 
 # API 冒烟测试（需服务运行）
 python -m pytest tests/test_api.py -v
 
-# RAG 评估
-python evaluation.py
+# 离线评估（检索质量，无需 API Key）
+python -m pytest tests/test_rag_retriever.py -v -s
 
-# Locust 压测
-locust -f tests/locustfile.py --host=http://localhost:8000
+# 在线评估（Agent 行为，需 API Key）
+python -m pytest tests/test_rag_agent.py -v -s
 
-# RAG 参数遍历
-python -m pytest tests/test_rag_precision_grid.py -v
+# Locust 压测（Mock 模式下 0 Token 消耗）
+RAG_MOCK_LLM=1 RAG_LOCUST_TOKEN=admin2026 locust -f tests/locustfile.py \
+  --host=http://localhost:8000 --headless -u 5 -r 1 --run-time 1m
+
+# 参数调优
+python tuning/tune_chunk_params.py --fast
+python tuning/tune_retriever_k.py --phase offline
 
 # 生产环境巡检
 bash tests/prod_verify.sh
@@ -201,11 +203,12 @@ sudo docker compose up -d
 ### 环境变量
 
 存储在 `docker/.env`，docker-compose 自动读取：
-- `DASHSCOPE_API_KEY`：阿里云 DashScope API Key
-- `ADMIN_TOKEN`：管理员密码（完全访问所有功能）
-- `GUEST_TOKEN`：访客密码（功能与 admin 一致，每小时 10 次 IP 限流，数据隔离）
-- `RAG_PROD_URL`：冒烟测试生产地址（`https://yellowduck.top/rag`）
-- `RAG_TEST_TOKEN`：冒烟测试 Bearer token（`guest123`）
+- `DASHSCOPE_API_KEY`：阿里云 DashScope API Key（对话模型）
+- `SILICONFLOW_API_KEY`：硅基流动 API Key（嵌入模型）
+- `ADMIN_TOKEN`：管理员密码
+- `GUEST_TOKEN`：访客密码
+- `RAG_PROD_URL`：生产环境地址
+- `RAG_TEST_TOKEN`：测试用 Bearer token
 
 ### 访问地址
 
