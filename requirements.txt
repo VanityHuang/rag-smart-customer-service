@@ -13,7 +13,6 @@ lxml>=4.9.0                 # web_search 工具 HTML 解析
 fastapi>=0.136.0
 uvicorn>=0.48.0
 python-multipart>=0.0.9
-streamlit>=1.57.0
 pytest>=8.0.0
 
 # ===== Docker 部署额外系统依赖 =====
