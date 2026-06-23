@@ -81,7 +81,6 @@ def get_embedding_model():
             model=embedding_model_name,
             api_key=embedding_api_key,
             openai_api_base=embedding_base_url,
-            dimensions=embedding_dimensions,
         )
     else:
         from langchain_community.embeddings import DashScopeEmbeddings
