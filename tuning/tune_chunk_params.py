@@ -193,16 +193,17 @@ def _preload_documents(max_chars: int = 100_000) -> dict:
 
     docs = {}
     skipped = []
+    TEXT_EXT = {".txt", ".md"}
     for filename in SEED_FILES:
         fpath = DATA_DIR / filename
         if not fpath.exists():
             print(f"  ⚠️  {filename} 不存在，跳过")
             continue
-        try:
+        ext = fpath.suffix.lower()
+        if ext in TEXT_EXT:
             text = fpath.read_text(encoding="utf-8", errors="ignore")
-        except Exception:
-            text = ""
-        if not text or len(text) < 10:
+        else:
+            # PDF/DOCX/PNG 等二进制文件，用 parse_bytes 解析
             file_bytes = fpath.read_bytes()
             text = parse_bytes(file_bytes, filename)
         if text:
