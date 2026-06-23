@@ -148,19 +148,15 @@ def _lcs_length(x: str, y: str) -> int:
     return dp[m][n]
 
 
-def rouge_l_f1(expected: str, content: str) -> float:
-    """计算 ROUGE-L F1 分数（基于字符级 LCS）"""
+def rouge_l_precision(expected: str, content: str) -> float:
+    """ROUGE-L Precision — expected 中有多少字符按序出现在 content 中"""
     if not expected or not content:
         return 0.0
     lcs = _lcs_length(expected, content)
-    precision = lcs / len(expected) if len(expected) > 0 else 0.0
-    recall = lcs / len(content) if len(content) > 0 else 0.0
-    if precision + recall == 0:
-        return 0.0
-    return 2 * precision * recall / (precision + recall)
+    return lcs / len(expected) if len(expected) > 0 else 0.0
 
 
-ROUGE_L_THRESHOLD = 0.4  # ROUGE-L F1 >= 0.4 视为命中
+ROUGE_L_THRESHOLD = 0.8  # Precision >= 0.8 视为命中（expected 的 80%+ 字符在 chunk 中）
 
 
 # ══════════════════════════════════════════════════════════════
@@ -242,7 +238,7 @@ def _build_and_evaluate(docs: dict, chunk_size: int, chunk_overlap: int) -> dict
                 for rank, (doc, score) in enumerate(results, start=1):
                     expected = q["expected"]
                     content = doc.page_content
-                    if expected and rouge_l_f1(expected, content) >= ROUGE_L_THRESHOLD:
+                    if expected and rouge_l_precision(expected, content) >= ROUGE_L_THRESHOLD:
                         hit = True
                         if best_rank is None:
                             best_rank = rank
