@@ -384,6 +384,7 @@ class RagAgentService:
         """流式接口 — 两阶段：Agent 循环处理工具调用后，流式输出最终答案"""
         if self._is_mock:
             import time
+            time.sleep(2.0)  # 模拟 LLM 思考延迟
             mock_text = "（Mock 回答）这是一个模拟流式回复，用于压测。"
             for char in mock_text:
                 yield char
