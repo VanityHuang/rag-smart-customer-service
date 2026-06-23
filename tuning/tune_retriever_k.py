@@ -205,6 +205,7 @@ def _build_index(tmp_dir: str):
         length_function=len,
     )
 
+    MAX_CHARS = 100_000  # 跳过超大文件
     for filename in SEED_FILES:
         fpath = DATA_DIR / filename
         if not fpath.exists():
@@ -218,8 +219,15 @@ def _build_index(tmp_dir: str):
             text = parse_bytes(file_bytes, filename)
         if not text:
             continue
+        if len(text) > MAX_CHARS:
+            print(f"  ⏭️  跳过 {filename} ({len(text):,} 字符)")
+            continue
         chunks = splitter.split_text(text) if len(text) > config.min_split_char_number else [text]
-        chroma.add_texts(chunks, metadatas=[{"source": filename}] * len(chunks))
+        # 分批添加，避免 Chroma batch size 超限
+        BATCH_SIZE = 5000
+        for batch_start in range(0, len(chunks), BATCH_SIZE):
+            batch = chunks[batch_start:batch_start + BATCH_SIZE]
+            chroma.add_texts(batch, metadatas=[{"source": filename}] * len(batch))
 
     return chroma
 
