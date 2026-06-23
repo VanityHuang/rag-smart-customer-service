@@ -23,7 +23,7 @@ retriever_score_threshold = 0.5                                 # [fallback] get
 
 # ── 模型 ──
 embedding_provider = "siliconflow"                              # [稳定] 嵌入提供商: siliconflow / dashscope
-embedding_model_name = "BAAI/bge-m3"                            # [稳定] 硅基流动嵌入模型
+embedding_model_name = "BAAI/bge-large-zh-v1.5"                 # [稳定] 硅基流动嵌入模型
 embedding_api_key = os.environ.get("SILICONFLOW_API_KEY", "")   # [稳定] 硅基流动 API Key
 embedding_base_url = "https://api.siliconflow.cn/v1"           # [稳定] 硅基流动接口地址
 embedding_dimensions = 1024                                     # [稳定] 嵌入维度
@@ -77,7 +77,16 @@ def get_embedding_model():
     """根据 embedding_provider 配置返回对应的嵌入模型实例"""
     if embedding_provider == "siliconflow":
         from langchain_openai import OpenAIEmbeddings
-        return OpenAIEmbeddings(
+        from openai import OpenAI
+
+        class _SiliconFlowEmbeddings(OpenAIEmbeddings):
+            """简化版：调用 SiliconFlow 时只传必要参数"""
+            def _get_len_safe_embeddings(self, texts, **kwargs):
+                client = OpenAI(api_key=embedding_api_key, base_url=embedding_base_url)
+                resp = client.embeddings.create(input=texts, model=embedding_model_name)
+                return [d.embedding for d in resp.data]
+
+        return _SiliconFlowEmbeddings(
             model=embedding_model_name,
             api_key=embedding_api_key,
             openai_api_base=embedding_base_url,
