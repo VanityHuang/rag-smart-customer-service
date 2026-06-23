@@ -12,7 +12,7 @@
 - **Agent 框架**: LangChain（`bind_tools` + 自定义 Agent 循环）
 - **向量数据库**: Chroma（本地持久化）
 - **嵌入模型**: DashScopeEmbeddings（`text-embedding-v4`，阿里云）
-- **对话模型**: ChatTongyi（`qwen3-max`，阿里云通义），必须传 `streaming=True` 否则 `stream()` 降级为非流式
+- **对话模型**: ChatTongyi（`qwen3-max-2026-01-23`，阿里云通义），必须传 `streaming=True` 否则 `stream()` 降级为非流式
 - **UI（开发）**: Streamlit（两个独立应用）
 - **UI（生产）**: 静态 HTML/CSS/JS（nginx serving），marked.js Markdown 渲染，SSE 流式消费
 - **API**: FastAPI
