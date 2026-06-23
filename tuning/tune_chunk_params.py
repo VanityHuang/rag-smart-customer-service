@@ -335,7 +335,7 @@ def _build_and_evaluate(docs: dict, chunk_size: int, chunk_overlap: int) -> dict
 
 def main():
     parser = argparse.ArgumentParser(description="chunk_size × overlap 参数遍历")
-    parser.add_argument("--sizes", nargs="+", type=int, default=[128, 256, 512, 1024])
+    parser.add_argument("--sizes", nargs="+", type=int, default=[128, 256, 512])
     parser.add_argument("--overlaps", nargs="+", type=int, default=[0, 32, 64, 128])
     parser.add_argument("--fast", action="store_true", help="快速模式: 256/512 × 32/64")
     parser.add_argument("--max-chars", type=int, default=5_000_000,
@@ -420,7 +420,7 @@ def main():
     print(f"{'=' * 70}")
 
     # 保存报告
-    report_dir = Path(__file__).parent.parent / "results"
+    report_dir = Path(__file__).parent / "results"
     report_dir.mkdir(exist_ok=True)
     report_path = report_dir / "chunk_tuning_report.json"
     with open(report_path, "w", encoding="utf-8") as f:

@@ -1,0 +1,297 @@
+{
+  "search_space": {
+    "chunk_sizes": [
+      128,
+      256,
+      512
+    ],
+    "overlaps": [
+      0,
+      32,
+      64,
+      128
+    ]
+  },
+  "results": [
+    {
+      "chunk_size": 128,
+      "overlap": 0,
+      "chunk_count": 113,
+      "overall_hit_rate": 0.7037037037037037,
+      "overall_mrr": 0.6049382716049383,
+      "overall_similarity": 0.5888483568474099,
+      "explicit": {
+        "hit_rate": 0.9722222222222222,
+        "mrr": 0.8518518518518519,
+        "avg_similarity": 0.676175617509418
+      },
+      "implicit": {
+        "hit_rate": 0.88,
+        "mrr": 0.7333333333333333,
+        "avg_similarity": 0.6411867260932922
+      },
+      "noise": {
+        "hit_rate": 0.0,
+        "mrr": 0.0,
+        "avg_similarity": 0.36623111367225647
+      },
+      "time": "41.7s",
+      "score": 0.9133827160493826
+    },
+    {
+      "chunk_size": 128,
+      "overlap": 32,
+      "chunk_count": 120,
+      "overall_hit_rate": 0.6790123456790124,
+      "overall_mrr": 0.5925925925925926,
+      "overall_similarity": 0.5852779076423174,
+      "explicit": {
+        "hit_rate": 0.9166666666666666,
+        "mrr": 0.8240740740740741,
+        "avg_similarity": 0.6772271825207604
+      },
+      "implicit": {
+        "hit_rate": 0.88,
+        "mrr": 0.7333333333333333,
+        "avg_similarity": 0.63425044298172
+      },
+      "noise": {
+        "hit_rate": 0.0,
+        "mrr": 0.0,
+        "avg_similarity": 0.3585660010576248
+      },
+      "time": "39.2s",
+      "score": 0.8899259259259259
+    },
+    {
+      "chunk_size": 128,
+      "overlap": 64,
+      "chunk_count": 141,
+      "overall_hit_rate": 0.7037037037037037,
+      "overall_mrr": 0.6234567901234568,
+      "overall_similarity": 0.590562888133673,
+      "explicit": {
+        "hit_rate": 0.9722222222222222,
+        "mrr": 0.8657407407407408,
+        "avg_similarity": 0.6817508074972365
+      },
+      "implicit": {
+        "hit_rate": 0.88,
+        "mrr": 0.7733333333333333,
+        "avg_similarity": 0.6404457712173461
+      },
+      "noise": {
+        "hit_rate": 0.0,
+        "mrr": 0.0,
+        "avg_similarity": 0.3640696704387665
+      },
+      "time": "40.1s",
+      "score": 0.9152345679012345
+    },
+    {
+      "chunk_size": 256,
+      "overlap": 0,
+      "chunk_count": 63,
+      "overall_hit_rate": 0.7283950617283951,
+      "overall_mrr": 0.6460905349794239,
+      "overall_similarity": 0.5619976299780386,
+      "explicit": {
+        "hit_rate": 0.9444444444444444,
+        "mrr": 0.8935185185185185,
+        "avg_similarity": 0.6547855585813522
+      },
+      "implicit": {
+        "hit_rate": 1.0,
+        "mrr": 0.8066666666666668,
+        "avg_similarity": 0.6012138843536377
+      },
+      "noise": {
+        "hit_rate": 0.0,
+        "mrr": 0.0,
+        "avg_similarity": 0.3459555238485336
+      },
+      "time": "36.3s",
+      "score": 0.9423868312757202
+    },
+    {
+      "chunk_size": 256,
+      "overlap": 32,
+      "chunk_count": 64,
+      "overall_hit_rate": 0.7283950617283951,
+      "overall_mrr": 0.6440329218106996,
+      "overall_similarity": 0.562712386066531,
+      "explicit": {
+        "hit_rate": 0.9444444444444444,
+        "mrr": 0.8981481481481483,
+        "avg_similarity": 0.6520353406667709
+      },
+      "implicit": {
+        "hit_rate": 1.0,
+        "mrr": 0.7933333333333333,
+        "avg_similarity": 0.6074639248847962
+      },
+      "noise": {
+        "hit_rate": 0.0,
+        "mrr": 0.0,
+        "avg_similarity": 0.3459906935691833
+      },
+      "time": "36.7s",
+      "score": 0.9421810699588478
+    },
+    {
+      "chunk_size": 256,
+      "overlap": 64,
+      "chunk_count": 65,
+      "overall_hit_rate": 0.7160493827160493,
+      "overall_mrr": 0.6522633744855968,
+      "overall_similarity": 0.5620658272578393,
+      "explicit": {
+        "hit_rate": 0.9444444444444444,
+        "mrr": 0.9120370370370371,
+        "avg_similarity": 0.653140761786037
+      },
+      "implicit": {
+        "hit_rate": 0.96,
+        "mrr": 0.8,
+        "avg_similarity": 0.6041420745849609
+      },
+      "noise": {
+        "hit_rate": 0.0,
+        "mrr": 0.0,
+        "avg_similarity": 0.3455290049314499
+      },
+      "time": "36.7s",
+      "score": 0.9310041152263374
+    },
+    {
+      "chunk_size": 256,
+      "overlap": 128,
+      "chunk_count": 71,
+      "overall_hit_rate": 0.7037037037037037,
+      "overall_mrr": 0.6234567901234568,
+      "overall_similarity": 0.564045469702026,
+      "explicit": {
+        "hit_rate": 0.9444444444444444,
+        "mrr": 0.8842592592592592,
+        "avg_similarity": 0.6562256217002869
+      },
+      "implicit": {
+        "hit_rate": 0.92,
+        "mrr": 0.7466666666666667,
+        "avg_similarity": 0.6052245616912841
+      },
+      "noise": {
+        "hit_rate": 0.0,
+        "mrr": 0.0,
+        "avg_similarity": 0.34664624035358427
+      },
+      "time": "36.0s",
+      "score": 0.9161234567901234
+    },
+    {
+      "chunk_size": 512,
+      "overlap": 0,
+      "chunk_count": 26,
+      "overall_hit_rate": 0.7283950617283951,
+      "overall_mrr": 0.6419753086419753,
+      "overall_similarity": 0.529798478991897,
+      "explicit": {
+        "hit_rate": 0.9444444444444444,
+        "mrr": 0.837962962962963,
+        "avg_similarity": 0.6053886910279592
+      },
+      "implicit": {
+        "hit_rate": 1.0,
+        "mrr": 0.8733333333333333,
+        "avg_similarity": 0.5760107612609864
+      },
+      "noise": {
+        "hit_rate": 0.0,
+        "mrr": 0.0,
+        "avg_similarity": 0.3359666496515274
+      },
+      "time": "35.8s",
+      "score": 0.9419753086419753
+    },
+    {
+      "chunk_size": 512,
+      "overlap": 32,
+      "chunk_count": 26,
+      "overall_hit_rate": 0.7283950617283951,
+      "overall_mrr": 0.6234567901234568,
+      "overall_similarity": 0.531962741304327,
+      "explicit": {
+        "hit_rate": 0.9444444444444444,
+        "mrr": 0.8240740740740741,
+        "avg_similarity": 0.6104790071646372
+      },
+      "implicit": {
+        "hit_rate": 1.0,
+        "mrr": 0.8333333333333333,
+        "avg_similarity": 0.5776648807525635
+      },
+      "noise": {
+        "hit_rate": 0.0,
+        "mrr": 0.0,
+        "avg_similarity": 0.3335122436285019
+      },
+      "time": "36.2s",
+      "score": 0.9401234567901234
+    },
+    {
+      "chunk_size": 512,
+      "overlap": 64,
+      "chunk_count": 26,
+      "overall_hit_rate": 0.7283950617283951,
+      "overall_mrr": 0.6275720164609053,
+      "overall_similarity": 0.5314173131813238,
+      "explicit": {
+        "hit_rate": 0.9444444444444444,
+        "mrr": 0.8240740740740741,
+        "avg_similarity": 0.6101710481776131
+      },
+      "implicit": {
+        "hit_rate": 1.0,
+        "mrr": 0.8466666666666667,
+        "avg_similarity": 0.5767874622344971
+      },
+      "noise": {
+        "hit_rate": 0.0,
+        "mrr": 0.0,
+        "avg_similarity": 0.33296004235744475
+      },
+      "time": "36.3s",
+      "score": 0.9405349794238683
+    },
+    {
+      "chunk_size": 512,
+      "overlap": 128,
+      "chunk_count": 28,
+      "overall_hit_rate": 0.7160493827160493,
+      "overall_mrr": 0.6049382716049383,
+      "overall_similarity": 0.5369901774842062,
+      "explicit": {
+        "hit_rate": 0.9444444444444444,
+        "mrr": 0.8333333333333334,
+        "avg_similarity": 0.6164671447541978
+      },
+      "implicit": {
+        "hit_rate": 0.96,
+        "mrr": 0.76,
+        "avg_similarity": 0.5860759234428405
+      },
+      "noise": {
+        "hit_rate": 0.0,
+        "mrr": 0.0,
+        "avg_similarity": 0.3325761198997498
+      },
+      "time": "38.5s",
+      "score": 0.9262716049382715
+    }
+  ],
+  "best": {
+    "chunk_size": 256,
+    "overlap": 0,
+    "score": 0.9423868312757202
+  }
+}
