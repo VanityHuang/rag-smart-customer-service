@@ -381,16 +381,6 @@ Agent回答：{answer}
         return 0.0
 
 
-def _normalize(values: list) -> list:
-    """归一化到 [0, 1]，值越小归一化值越接近 1（越小越好）"""
-    if not values:
-        return values
-    mx = max(values)
-    if mx == 0:
-        return [1.0] * len(values)
-    return [1 - v / mx for v in values]
-
-
 def phase_online(k_values: list):
     """Phase 2: 在线验证 — 三维量化打分（成本40% + 延迟20% + 质量40%）"""
     import config_data as config
@@ -457,67 +447,53 @@ def phase_online(k_values: list):
             "avg_quality": avg_quality,
         })
 
-        print(f"\n  📊 k={k}: 成本={avg_tokens_in:.0f} tokens | "
+        print(f"\n  📊 k={k}: Token={avg_tokens_in:.0f}/请求 | "
               f"延迟={avg_latency:.1f}s | 质量={avg_quality:.2f}/5")
 
-    # 三维归一化打分
-    tokens_list = [r["avg_tokens_in"] for r in all_results]
-    latency_list = [r["avg_latency"] for r in all_results]
-    quality_list = [r["avg_quality"] for r in all_results]
+    # 成本红线：超过最低值 50% 的候选淘汰
+    min_tokens = min(r["avg_tokens_in"] for r in all_results)
+    threshold = min_tokens * 1.5
+    survivors = [r for r in all_results if r["avg_tokens_in"] <= threshold]
 
-    token_norm = _normalize(tokens_list)
-    latency_norm = _normalize(latency_list)
-    # 质量：越高越好，直接归一化到 [0, 1]
-    max_q = max(quality_list) if quality_list else 1
-    quality_norm = [q / max_q for q in quality_list]
-
-    for i, r in enumerate(all_results):
-        r["score"] = (
-            token_norm[i] * 0.4
-            + latency_norm[i] * 0.2
-            + quality_norm[i] * 0.4
-        )
+    print(f"\n{'=' * 60}")
+    print(f"  成本红线: {threshold:.0f} tokens（最低 {min_tokens:.0f} × 1.5）")
+    print(f"  候选: {[r['k'] for r in all_results]} → 通过: {[r['k'] for r in survivors]}")
 
     # 输出对比表
-    print("\n" + "=" * 70)
-    print("  在线验证 — 三维量化打分表")
-    print("=" * 70)
-
-    header = f"{'k':<5} {'成本分':<8} {'延迟分':<8} {'质量分':<8} {'总分':<8} {'平均Token':<12} {'平均延迟':<10} {'平均质量':<8}"
-    print(f"\n{header}")
-    print("-" * len(header))
-
+    print(f"\n{'k':<5} {'平均Token':<12} {'平均延迟':<10} {'平均质量':<10}")
+    print("-" * 40)
     for r in all_results:
-        print(
-            f"{r['k']:<5} "
-            f"{token_norm[all_results.index(r)]:<7.2%} "
-            f"{latency_norm[all_results.index(r)]:<7.2%} "
-            f"{quality_norm[all_results.index(r)]:<7.2%} "
-            f"{r['score']:<7.4f} "
-            f"{r['avg_tokens_in']:<11.0f} "
-            f"{r['avg_latency']:<9.1f} "
-            f"{r['avg_quality']:<7.2f}"
-        )
+        flag = " 🚫" if r not in survivors else ""
+        print(f"{r['k']:<5} {r['avg_tokens_in']:<11.0f} "
+              f"{r['avg_latency']:<9.1f}s {r['avg_quality']:<8.2f}/5{flag}")
 
-    # 推荐逻辑
-    best = all_results[0]
-    if len(all_results) >= 2:
-        q1, q2 = all_results[0]["avg_quality"], all_results[1]["avg_quality"]
-        if abs(q1 - q2) < 0.2:
-            # 质量差距 < 0.2 → 选 Token 更少的
-            best = min(all_results, key=lambda r: r["avg_tokens_in"])
-            print(f"\n🎯 质量差距 {abs(q1 - q2):.2f} < 0.2 → 推荐 Token 更少的 k={best['k']}")
+    # 推荐逻辑（仅比较幸存者）
+    if len(survivors) >= 2:
+        q_max = max(survivors, key=lambda r: r["avg_quality"])
+        q_min = min(survivors, key=lambda r: r["avg_quality"])
+        quality_gap = q_max["avg_quality"] - q_min["avg_quality"]
+
+        if quality_gap < 0.3:
+            best = min(survivors, key=lambda r: r["avg_tokens_in"])
+            print(
+                f"\n🎯 质量差距 {quality_gap:.2f} < 0.3 → 选 Token 更少的 k={best['k']}"
+                f"\n   k={q_max['k']} 质量更高（{q_max['avg_quality']:.2f}），"
+                f"但多消耗 {int(best['avg_tokens_in'] - q_max['avg_tokens_in']) if best['avg_tokens_in'] > q_max['avg_tokens_in'] else int(q_max['avg_tokens_in'] - best['avg_tokens_in'])} tokens/请求"
+            )
         else:
-            # 质量差距 ≥ 0.2 → 选质量更高的
-            best = max(all_results, key=lambda r: r["avg_quality"])
-            print(f"\n🎯 质量差距 {abs(q1 - q2):.2f} ≥ 0.2 → 推荐质量更高的 k={best['k']}")
+            best = q_max
+            cheaper = min(survivors, key=lambda r: r["avg_tokens_in"])
+            print(
+                f"\n🎯 质量差距 {quality_gap:.2f} ≥ 0.3 → 选质量更高的 k={best['k']}"
+                f"\n   比 k={cheaper['k']} 多消耗 {int(best['avg_tokens_in'] - cheaper['avg_tokens_in'])} tokens/请求"
+            )
     else:
-        best = all_results[0]
+        best = survivors[0] if survivors else min(all_results, key=lambda r: r["avg_tokens_in"])
 
-    print(f"   平均 Token: {best['avg_tokens_total']:.0f} | "
-          f"平均延迟: {best['avg_latency']:.1f}s | "
-          f"质量分: {best['avg_quality']:.2f}/5 | "
-          f"综合分: {best['score']:.4f}")
+    print(f"\n⚙️  最终推荐: k={best['k']} | "
+          f"Token={best['avg_tokens_in']:.0f}/请求 | "
+          f"延迟={best['avg_latency']:.1f}s | "
+          f"质量={best['avg_quality']:.2f}/5")
 
     return all_results, best
 
