@@ -1,0 +1,26 @@
+{
+  "results": [
+    {
+      "k": 10,
+      "avg_tokens_in": 9258.566666666668,
+      "avg_tokens_total": 9456.133333333333,
+      "avg_latency": 9.401031414667765,
+      "avg_quality": 3.2666666666666666
+    },
+    {
+      "k": 15,
+      "avg_tokens_in": 3076.1,
+      "avg_tokens_total": 3244.6,
+      "avg_latency": 6.657929976781209,
+      "avg_quality": 4.1
+    },
+    {
+      "k": 20,
+      "avg_tokens_in": 3144.633333333333,
+      "avg_tokens_total": 3300.9666666666667,
+      "avg_latency": 6.580762966473897,
+      "avg_quality": 3.7333333333333334
+    }
+  ],
+  "best_k": 15
+}

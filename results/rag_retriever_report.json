@@ -1,0 +1,34 @@
+{
+  "type": "offline_retriever",
+  "config": {
+    "score_high": 0.2,
+    "score_low": 0.5,
+    "retriever_k": 3
+  },
+  "results": [
+    {
+      "label": "显式",
+      "total": 30,
+      "hits": 29,
+      "hit_rate": 0.9666666666666667,
+      "mrr": 0.9194444444444444,
+      "avg_similarity": 0.6486878971258799
+    },
+    {
+      "label": "隐式",
+      "total": 20,
+      "hits": 17,
+      "hit_rate": 0.85,
+      "mrr": 0.6488095238095238,
+      "avg_similarity": 0.6020674616098404
+    },
+    {
+      "label": "噪声",
+      "total": 20,
+      "hits": 0,
+      "hit_rate": 0.0,
+      "mrr": 0.0,
+      "avg_similarity": 0.345984622836113
+    }
+  ]
+}

@@ -1,0 +1,44 @@
+{
+  "type": "online_agent",
+  "results": [
+    {
+      "label": "显式",
+      "total": 10,
+      "counts": {
+        "direct": 9,
+        "web_fallback": 1,
+        "refuse": 0,
+        "redirect": 0
+      },
+      "direct_ratio": 0.9,
+      "web_fallback_ratio": 0.1,
+      "refusal_ratio": 0.0
+    },
+    {
+      "label": "隐式",
+      "total": 10,
+      "counts": {
+        "direct": 10,
+        "web_fallback": 0,
+        "refuse": 0,
+        "redirect": 0
+      },
+      "direct_ratio": 1.0,
+      "web_fallback_ratio": 0.0,
+      "refusal_ratio": 0.0
+    },
+    {
+      "label": "噪声",
+      "total": 10,
+      "counts": {
+        "direct": 2,
+        "web_fallback": 3,
+        "refuse": 2,
+        "redirect": 3
+      },
+      "direct_ratio": 0.2,
+      "web_fallback_ratio": 0.3,
+      "refusal_ratio": 0.5
+    }
+  ]
+}
