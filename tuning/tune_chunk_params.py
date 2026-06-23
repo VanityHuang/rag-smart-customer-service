@@ -50,8 +50,8 @@ SEED_FILES = [
     "鸭鸭科技业务报告.png",
 ]
 
-# ── 验证测试集（仅含 expected 能在已加载文档中精确匹配的题目）──
-# 来源: 产品规格.md + FAQ.txt（运维手册.pdf 和 业务报告.png 被跳过）
+# ── 验证测试集（覆盖全部 5 个文档）──
+# 来源: 产品规格.md + FAQ.txt + 员工手册.docx + 运维手册.pdf + 业务报告.png
 
 EXPLICIT_QUESTIONS = [
     # ── 产品规格.md ──
@@ -82,6 +82,18 @@ EXPLICIT_QUESTIONS = [
     {"question": "专业版套餐包含多少用户", "expected": "50 用户"},
     {"question": "备份数据保留多少天", "expected": "90 天"},
     {"question": "数据加密存储层使用什么加密方式", "expected": "AES-256"},
+    # ── 运维手册.pdf ──
+    {"question": "鸭鸭云服务器推荐什么操作系统", "expected": "CentOS 7.9 或 Ubuntu 22.04 LTS"},
+    {"question": "系统盘推荐多大容量", "expected": "SSD 云盘 50GB"},
+    {"question": "数据盘最低不少于多少", "expected": "不低于 100GB"},
+    {"question": "实例创建后多久可使用", "expected": "3-5 分钟"},
+    {"question": "创建运维账号的命令是什么", "expected": "useradd -m -s /bin/bash ops"},
+    # ── 业务报告.png ──
+    {"question": "鸭鸭科技2024年营业收入", "expected": "2.36 亿元"},
+    {"question": "鸭鸭科技2024年净利润", "expected": "3460万元"},
+    {"question": "鸭鸭科技2024年研发投入", "expected": "1870万元"},
+    {"question": "鸭鸭科技服务多少客户", "expected": "1200+"},
+    {"question": "鸭鸭科技2024年营收同比增长", "expected": "32.6%"},
 ]
 
 IMPLICIT_QUESTIONS = [
@@ -101,6 +113,18 @@ IMPLICIT_QUESTIONS = [
     {"question": "专业版套餐有哪些高级功能", "expected": "高级分析和自动化"},
     {"question": "游戏服务器选哪种计算型实例", "expected": "c1.xlarge"},
     {"question": "如何延长免费试用期", "expected": "延长至 30 天"},
+    # ── 运维手册.pdf（隐式/操作相关）──
+    {"question": "云服务器选择什么操作系统好", "expected": "CentOS 7.9"},
+    {"question": "首次登录需要做什么", "expected": "修改默认密码"},
+    {"question": "CentOS怎么更新系统", "expected": "yum update -y"},
+    {"question": "Ubuntu怎么更新系统", "expected": "apt update && apt upgrade -y"},
+    {"question": "配置时区的命令是什么", "expected": "timedatectl set-timezone Asia/Shanghai"},
+    # ── 业务报告.png（隐式/数字推理）──
+    {"question": "鸭鸭科技净利润增长率", "expected": "28.4%"},
+    {"question": "客户数量增长率", "expected": "41.2%"},
+    {"question": "研发投入增长率", "expected": "35.7%"},
+    {"question": "鸭鸭科技有哪些核心业务", "expected": "云计算服务"},
+    {"question": "鸭鸭科技成立时间", "expected": "2018 年"},
 ]
 
 NOISE_QUESTIONS = [
@@ -310,8 +334,8 @@ def main():
     parser.add_argument("--sizes", nargs="+", type=int, default=[128, 256, 512, 1024])
     parser.add_argument("--overlaps", nargs="+", type=int, default=[0, 32, 64, 128])
     parser.add_argument("--fast", action="store_true", help="快速模式: 256/512 × 32/64")
-    parser.add_argument("--max-chars", type=int, default=100_000,
-                        help="跳过超过此字符数的文档（默认 100000，避免大文件嵌入过慢）")
+    parser.add_argument("--max-chars", type=int, default=5_000_000,
+                        help="跳过超过此字符数的文档（默认 5000000，覆盖 5 个测试文档）")
     args = parser.parse_args()
 
     if args.fast:
