@@ -80,7 +80,7 @@ cd docker && docker-compose up --build
 
 ## 第 ③ 层：离线评估（检索侧能力）
 
-纯向量检索评估，不调用 LLM，无需 API Key。基于 5 个鸭鸭知识文档的 82 条测试集。
+纯向量检索评估，不调用 LLM，无需 API Key。基于 5 个鸭鸭知识文档的 82 条测试集（`retriever_k=15`）。
 
 ```bash
 python -m pytest tests/test_rag_retriever.py -v -s
@@ -91,13 +91,13 @@ python -m pytest tests/test_rag_retriever.py -v -s
 产出报告：
 
 ```
-测试集    数量  命中  Hit Rate@3  MRR       平均最高相似度
-显式      36    34    94%         89%       0.65
-隐式      26    26    100%        79%       0.60
-噪声      20    0     0%          0%        0.35
+测试集    数量  命中  Hit Rate@15  MRR       平均最高相似度
+显式      36    34    94%          89%       0.65
+隐式      26    26    100%         79%       0.60
+噪声      20    0     0%           0%        0.35
 ```
 
-- **Hit Rate@3**：top-3 检索结果中是否包含标准答案关键词
+- **Hit Rate@15**：top-15 检索结果中是否包含标准答案关键词（k=15）
 - **MRR**：第一个相关结果的排名倒数
 - **平均最高相似度**：top-1 结果的余弦相似度
 
