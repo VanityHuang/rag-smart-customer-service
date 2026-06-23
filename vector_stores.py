@@ -36,8 +36,7 @@ class VectorStoreService(object):
 
 
 if __name__ == '__main__':
-    from langchain_community.embeddings import DashScopeEmbeddings
-    retriever = VectorStoreService(DashScopeEmbeddings(model=config.embedding_model_name)).get_retriever()
+    retriever = VectorStoreService(config.get_embedding_model()).get_retriever()
 
     res = retriever.invoke("我的体重180斤, 尺码推荐")
     print(res)

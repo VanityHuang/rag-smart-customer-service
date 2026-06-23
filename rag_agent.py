@@ -25,7 +25,7 @@ class RagAgentService:
     def __init__(self, vector_service: VectorStoreService = None, role: str = "admin"):
         self.role = role
         self.vector_service = vector_service or VectorStoreService(
-            embedding=DashScopeEmbeddings(model=config.embedding_model_name)
+            embedding=config.get_embedding_model()
         )
         self.chat_model = ChatTongyi(
             model=config.chat_model_name,

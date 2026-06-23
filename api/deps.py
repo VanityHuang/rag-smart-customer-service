@@ -2,7 +2,6 @@
 from rag_agent import RagAgentService
 from knowledge_base import KnowledgeBaseService
 from vector_stores import VectorStoreService
-from langchain_community.embeddings import DashScopeEmbeddings
 import config_data as config
 
 _role_rag = {}
@@ -33,7 +32,7 @@ def get_rag_service(role: str) -> RagAgentService:
     if role not in _role_rag:
         cfg = get_role_config(role)
         vs = VectorStoreService(
-            embedding=DashScopeEmbeddings(model=config.embedding_model_name),
+            embedding=config.get_embedding_model(),
             collection_name=cfg["collection_name"],
             persist_directory=cfg["persist_directory"],
         )

@@ -168,7 +168,7 @@ def _build_and_evaluate(docs: dict, chunk_size: int, chunk_overlap: int) -> dict
     from langchain_text_splitters import RecursiveCharacterTextSplitter
     import config_data as config
 
-    embedding = DashScopeEmbeddings(model=config.embedding_model_name)
+    embedding = config.get_embedding_model()
 
     with tempfile.TemporaryDirectory() as tmp_dir:
         chroma = Chroma(

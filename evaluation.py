@@ -140,7 +140,7 @@ _TEST_CASES: List[Tuple[str, List[str], str]] = [
 class RagEvaluator:
     def __init__(self, auto_seed: bool = True):
         self.vector_service = VectorStoreService(
-            embedding=DashScopeEmbeddings(model=config.embedding_model_name)
+            embedding=config.get_embedding_model()
         )
         self._seeded_sources: List[str] = []
         if auto_seed:

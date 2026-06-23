@@ -190,7 +190,7 @@ def _build_index(tmp_dir: str):
     from langchain_text_splitters import RecursiveCharacterTextSplitter
     from file_parser import parse_bytes
 
-    embedding = DashScopeEmbeddings(model=config.embedding_model_name)
+    embedding = config.get_embedding_model()
     chroma = Chroma(
         collection_name="k_tune_test",
         embedding_function=embedding,

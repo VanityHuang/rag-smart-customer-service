@@ -67,7 +67,7 @@ class KnowledgeBaseService(object):
 
         self.chroma = Chroma(
             collection_name=self.collection_name,
-            embedding_function=DashScopeEmbeddings(model=config.embedding_model_name),
+            embedding_function=config.get_embedding_model(),
             persist_directory=self.persist_directory,
             collection_metadata={"hnsw:space": "cosine"},
         )

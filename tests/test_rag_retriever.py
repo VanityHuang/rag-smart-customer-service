@@ -142,7 +142,7 @@ def _evaluate_retriever(questions: list, label: str) -> dict:
     import config_data as config
 
     vector_service = VectorStoreService(
-        embedding=DashScopeEmbeddings(model=config.embedding_model_name),
+        embedding=config.get_embedding_model(),
         collection_name="rag_admin",
         persist_directory="./data/chroma_db/admin",
     )
