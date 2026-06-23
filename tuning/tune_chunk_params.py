@@ -258,7 +258,7 @@ def _build_and_evaluate(docs: dict, chunk_size: int, chunk_overlap: int) -> dict
         similarities = []
 
         for label, q in ALL_QUESTIONS:
-            results = chroma.similarity_search_with_score(q["question"], k=3)
+            results = chroma.similarity_search_with_score(q["question"], k=config.retriever_k)
             if results:
                 similarities.append(1 - results[0][1])
                 hit = False
@@ -287,7 +287,7 @@ def _build_and_evaluate(docs: dict, chunk_size: int, chunk_overlap: int) -> dict
             sub_rr = []
             sub_sim = []
             for label, q in subset:
-                results = chroma.similarity_search_with_score(q["question"], k=3)
+                results = chroma.similarity_search_with_score(q["question"], k=config.retriever_k)
                 if results:
                     sub_sim.append(1 - results[0][1])
                     hit = False

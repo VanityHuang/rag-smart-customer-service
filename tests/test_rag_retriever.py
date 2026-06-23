@@ -4,7 +4,7 @@
 评估对象：向量数据库的检索质量
 评估方式：纯向量搜索，不调用 LLM
 测试集：30 显式 + 20 隐式 + 20 噪声 = 70 题
-指标：Hit Rate@3、MRR、平均最高相似度
+指标：Hit Rate@k、MRR、平均最高相似度（k=config.retriever_k）
 
 用法（无需 API Key）:
     python -m pytest tests/test_rag_retriever.py -v -s
@@ -230,7 +230,7 @@ def test_rag_retriever():
     print("  离线评估报告")
     print("=" * 60)
 
-    header = f"{'测试集':<10} {'数量':<6} {'命中':<6} {'Hit Rate@3':<12} {'MRR':<10} {'平均最高相似度':<14}"
+    header = f"{'测试集':<10} {'数量':<6} {'命中':<6} {'Hit Rate@k':<12} {'MRR':<10} {'平均最高相似度':<14}"
     print(f"\n{header}")
     print("-" * len(header))
 
