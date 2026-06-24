@@ -32,20 +32,25 @@
 |------|------|
 | `RagAgentService` | Agent Loop（手写循环，非 LangChain AgentExecutor）+ 两阶段流式生成 |
 | `KnowledgeBaseService` | 文档分块 → MD5 去重 → 向量化 → Chroma 存储 |
-| `file_parser.py` | 多格式解析：TXT/MD（open）、PDF（PyMuPDF）、DOCX（python-docx）、图片（PaddleOCR/pytesseract） |
+| `file_parser.py` | 多格式解析：TXT/MD（open）、PDF（PyMuPDF）、DOCX（python-docx）、图片（RapidOCR，ONNX Runtime） |
 | `FileChatMessageHistory` | JSON 文件持久化 + `SessionsMetadata` 会话元数据管理 |
-| `VectorStoreService` | Chroma 检索封装，`get_retriever(k=3)` |
+| `VectorStoreService` | Chroma 检索封装，`get_retriever(k=15)` |
+| `api/deps.py` | 角色服务工厂 — 按 admin/guest 返回独立的 RAG / KB 服务实例 |
+| `api/middleware.py` | `AuthRoleMiddleware` — Bearer Token → 角色识别 + 注入 `request.state.role` |
+| `api/auth.py` | 角色认证 — `ADMIN_TOKEN` / `GUEST_TOKEN` 环境变量匹配 |
+| `api/rate_limit.py` | guest IP 每小时限流（JSON 文件计数，10 次/小时） |
 
 **基础设施：**
 
 - **Docker** — `python:3.11-slim` + uvicorn `--reload`，mem_limit=1g
-- **Chroma** — 本地向量数据库，`./data/chroma_db/`
-- **聊天历史** — JSON 文件，`./data/chat_history/`
+- **Chroma** — 本地向量数据库，`./data/chroma_db/{admin,guest}/`（角色化隔离）
+- **聊天历史** — JSON 文件，`./data/chat_history/{admin,guest}/`（角色化隔离）
 - **systemd** — `rag-agent.service`，管理 Docker 容器生命周期
 
 **外部服务：**
 
-- **DashScope** — 通义千问 `qwen3-max`（对话）+ `text-embedding-v4`（嵌入）
+- **DashScope** — `qwen3.5-flash`（对话模型，ChatOpenAI 兼容接口）
+- **SiliconFlow** — `BAAI/bge-large-zh-v1.5`（嵌入模型，1024 维向量）
 - **联网搜索** — 百度新闻优先 + Bing 备用（爬虫解析，无官方 API）
 
 ---
@@ -61,8 +66,8 @@
 1. **config_data.py** — 全局配置常量（模型名、路径、阈值、auth_token）
 2. **独立模块** — `file_parser.py`、`file_history_store.py`、`vector_stores.py`（无反向依赖）
 3. **核心服务** — `knowledge_base.py`、`rag_agent.py`（消费独立模块）
-4. **API 接口层** — `api/server.py`、`api/chat.py`、`api/knowledge_base.py`
-5. **前端界面** — `ui/`（Streamlit 直连模式）、`web/`（HTTP 调用 API）
+4. **API 接口层** — `api/server.py`（入口）、`api/middleware.py`（认证中间件）、`api/auth.py`（角色识别）、`api/rate_limit.py`（guest 限流）、`api/deps.py`（角色服务工厂）、`api/chat.py`（聊天路由）、`api/knowledge_base.py`（知识库路由）
+5. **前端界面** — `web/index.html`（聊天）、`web/upload.html`（知识库管理）
 
 ---
 
@@ -74,9 +79,10 @@
 
 **关键设计：**
 
-- **MD5 去重** — 文档级去重（非块级），整份文件的 MD5 与 `md5.text` 比对
-- **分块阈值** — `len > 1000` 字符才触发 `TextSplitter`（chunk_size=100, overlap=20），短文档保持完整
-- **嵌入模型** — DashScope `text-embedding-v4`，1024 维向量
+- **MD5 去重** — 文档级去重（非块级），整份文件的 MD5 与 `md5_admin.txt` / `md5_guest.txt` 比对
+- **分块阈值** — `len > 1000` 字符才触发 `TextSplitter`（chunk_size=256, overlap=32），短文档保持完整
+- **嵌入模型** — SiliconFlow `BAAI/bge-large-zh-v1.5`，1024 维向量
+- **图片 OCR** — 支持 PNG/JPG/JPEG/BMP/TIFF，使用 RapidOCR（ONNX Runtime），置信度 ≥ 0.5 保留
 
 ---
 
@@ -89,19 +95,24 @@
 **循环逻辑：**
 
 ```
-用户输入 → Auth 校验 → 构建 messages → Agent Loop:
-  model_with_tools.invoke(messages)
-  ├── 有 tool_calls → 执行工具 → ToolMessage 追加 → 继续循环
-  ├── 无 tool_calls → 返回最终回答（跳出）
-  └── 达到 max_iterations(5) → fallback 强制生成（跳出）
+用户输入 → AuthRoleMiddleware(Bearer Token → role)
+  → guest 限流检查(每小时10次)
+  → validate_input(长度≥2 + 含中英文)
+  → deps.get_rag_service(role) 角色化服务实例
+  → 构建 messages(截断最近5轮历史) → Agent Loop:
+    model_with_tools.invoke(messages)
+    ├── 有 tool_calls → 执行工具 → ToolMessage 追加 → 继续循环
+    ├── 无 tool_calls → 返回最终回答（跳出）
+    └── 达到 max_iterations(5) → fallback 强制生成（跳出）
 → stream() 逐 token 输出 → SSE 推送到前端
+→ token_usage 累加到会话元数据（持久化）
 ```
 
 **三个工具：**
 
 | 工具 | 触发条件 | 实现 |
 |------|----------|------|
-| `knowledge_base_search` | 默认优先 | Chroma 相似度检索 k=3 |
+| `knowledge_base_search` | 默认优先 | Chroma 相似度检索 k=15，按分数分层（高分/中分/丢弃） |
 | `web_search` | 知识库无结果或需实时信息 | 百度新闻 + Bing 爬虫 |
 | `calculator` | 数学计算需求 | `ast.parse` + 白名单 eval |
 
@@ -143,6 +154,8 @@ Internet → HTTPS → nginx (Let's Encrypt SSL)
 Docker 容器 (python:3.11-slim)
   ├── uvicorn api.server:app --reload
   ├── Volume: 源码 (热重载) + data/ (持久化)
+  │   ├── 源码: api/ rag_agent.py config_data.py file_parser.py ...
+  │   └── 数据: chroma_db/{admin,guest}/ chat_history/{admin,guest}/ md5_admin.txt md5_guest.txt rate_limit.json
   └── mem_limit=1g, user=1000:1000
 
 systemd rag-agent.service

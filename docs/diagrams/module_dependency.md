@@ -17,15 +17,17 @@ flowchart TD
 
   subgraph L3["API接口层"]
     server["api/server.py FastAPI入口"]
+    mw["api/middleware.py AuthRoleMiddleware"]
+    auth["api/auth.py 角色识别"]
+    rl["api/rate_limit.py guest限流"]
+    deps["api/deps.py 角色服务工厂"]
     api_chat["api/chat.py 聊天路由"]
     api_kb["api/knowledge_base.py 知识库路由"]
   end
 
   subgraph L4["前端界面"]
-    ui_qa["ui/app_qa.py Streamlit"]
-    ui_up["ui/app_file_uploader.py"]
-    web_idx["web/index.html 生产前端"]
-    web_up["web/upload.html"]
+    web_idx["web/index.html 聊天"]
+    web_up["web/upload.html 知识库管理"]
   end
 
   eval["evaluation.py RAG评估"]
@@ -34,10 +36,16 @@ flowchart TD
   fp --> kb
   vs --> rag & eval
   hs --> rag & api_chat
-  kb --> api_kb & ui_up & eval
-  rag --> api_chat & server & ui_qa
+  kb --> api_kb & eval
+  rag --> deps
+  kb --> deps
+  deps --> api_chat & api_kb
+  mw --> auth
+  mw --> rl
+  auth --> mw
   api_chat --> server
   api_kb --> server
+  mw --> server
   web_idx -.-> api_chat
   web_up -.-> api_kb
 
@@ -49,6 +57,6 @@ flowchart TD
   class config config
   class fp,hs,vs L1
   class kb,rag L2
-  class server,api_chat,api_kb L3
-  class ui_qa,ui_up,web_idx,web_up L4
+  class server,mw,auth,rl,deps,api_chat,api_kb L3
+  class web_idx,web_up L4
 ```
