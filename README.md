@@ -109,7 +109,6 @@ RAG/
 ├── file_history_store.py  # 聊天历史存储（文件 + 会话元数据 + Token 累计）
 ├── evaluation.py          # RAG 评估（Hit Rate / MRR / 延迟）
 ├── config_data.py         # 全局配置（含 admin_token/guest_token + System Prompt）
-├── bug_and_fix.md         # Bug 修复记录
 ├── TESTING.md             # 6 层结果类测试体系指南
 ├── requirements.txt       # 完整依赖（含 streamlit/pytest，本地开发用）
 └── requirements-prod.txt  # 生产依赖（Docker 用，精简版）

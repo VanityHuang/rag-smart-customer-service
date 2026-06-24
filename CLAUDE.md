@@ -35,7 +35,6 @@
 | `api/` | FastAPI 后端 — `server.py`（入口 + Auth 中间件）、`chat.py`（角色化聊天端点 + 输入校验 + 前置拦截）、`knowledge_base.py`（角色化 KB 管理）、`auth.py`（角色认证）、`rate_limit.py`（guest IP 限流）、`middleware.py`（认证中间件）、`deps.py`（角色服务工厂） |
 | `tests/` | 测试脚本 — `test_api.py`（API 冒烟）、`test_rag_retriever.py`（离线评估）、`test_rag_agent.py`（在线评估）、`locustfile.py`（压测）、`prod_verify.sh`（生产巡检）、`data/`（测试文档） |
 | `tuning/` | 参数调优脚本 — `tune_chunk_params.py`（chunk_size/overlap 遍历）、`tune_retriever_k.py`（retriever_k 调优）、`results/`（调优报告） |
-| `bug_and_fix.md` | Bug 修复记录 |
 | `docker/` | Docker 配置 — `Dockerfile`、`docker-compose.yml`、`.env` |
 | `web/` | 静态前端 — `index.html`（聊天）、`upload.html`（知识库管理） |
 | `docs/` | 架构文档 + Mermaid 图 |
