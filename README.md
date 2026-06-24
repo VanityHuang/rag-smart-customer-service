@@ -117,8 +117,8 @@ RAG/
 ## API 端点
 
 所有 API 端点需要 `Authorization: Bearer <password>` 请求头（密码在 `docker/.env` 中配置）。
-- **admin**（`admin2026`）：完全访问，不限次数
-- **guest**（`guest123`）：功能完全一致，每小时 10 次 IP 限流，数据与 admin 隔离
+- **admin**（配置于 `ADMIN_TOKEN`）：完全访问，不限次数
+- **guest**（配置于 `GUEST_TOKEN`）：功能完全一致，每小时 10 次 IP 限流，数据与 admin 隔离
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
@@ -147,7 +147,7 @@ python -m pytest tests/test_rag_agent.py -v -s
 python -m pytest tests/test_api.py -v
 
 # Locust 压测（Mock 模式 0 Token 消耗）
-RAG_MOCK_LLM=1 RAG_LOCUST_TOKEN=admin2026 locust -f tests/locustfile.py \
+RAG_MOCK_LLM=1 RAG_LOCUST_TOKEN=&lt;your-token&gt; locust -f tests/locustfile.py \
   --host=http://localhost:8000 --headless -u 5 -r 1 --run-time 1m
 
 # 参数调优

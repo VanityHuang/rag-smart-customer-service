@@ -3,14 +3,14 @@
 # 用法: bash tests/prod_verify.sh [BASE_URL] [TOKEN]
 #
 # 示例:
-#   bash tests/prod_verify.sh                                  # 用默认值
-#   bash tests/prod_verify.sh https://yellowduck.top/rag guest123
+#   bash tests/prod_verify.sh                                  # 用默认值（需设置 RAG_PROD_URL / RAG_TEST_TOKEN）
+#   bash tests/prod_verify.sh https://your-domain.com/rag &lt;your-token&gt;
 
 set -euo pipefail
 
 # ── 参数 ──
-BASE_URL="${1:-${RAG_PROD_URL:-https://yellowduck.top/rag}}"
-TOKEN="${2:-${RAG_TEST_TOKEN:-guest123}}"
+BASE_URL="${1:-${RAG_PROD_URL:?Error: 请提供 BASE_URL 参数或设置 RAG_PROD_URL 环境变量}}"
+TOKEN="${2:-${RAG_TEST_TOKEN:?Error: 请提供 TOKEN 参数或设置 RAG_TEST_TOKEN 环境变量}}"
 AUTH="Authorization: Bearer ${TOKEN}"
 
 PASS=0

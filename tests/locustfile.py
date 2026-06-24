@@ -14,7 +14,7 @@ Locust 压测脚本 — 系统稳定性与性能测试
         --headless -u 10 -r 2 --run-time 3m --csv=results/load_test
 
 环境变量:
-    RAG_LOCUST_TOKEN — Bearer token（默认 guest123）
+    RAG_LOCUST_TOKEN — Bearer token（必填，通过环境变量设置）
     RAG_MOCK_LLM=1 — 启用 Mock LLM 模式，不消耗 Token 但走通全链路
 """
 
@@ -31,7 +31,7 @@ class RAGUser(HttpUser):
 
     def on_start(self):
         """用户启动时获取 token"""
-        self.token = os.environ.get("RAG_LOCUST_TOKEN", "guest123")
+        self.token = os.environ["RAG_LOCUST_TOKEN"]  # 必须在环境变量中设置，无硬编码回退
         self.auth_headers = {"Authorization": f"Bearer {self.token}"}
         self.session_id = f"locust_{uuid.uuid4().hex[:8]}"
 

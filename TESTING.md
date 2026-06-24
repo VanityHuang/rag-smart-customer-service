@@ -33,7 +33,7 @@ echo $SILICONFLOW_API_KEY    # 嵌入模型（硅基流动）
 python -m pytest tests/test_api.py -v
 
 # 同时测本地和生产环境
-RAG_PROD_URL=https://yellowduck.top/rag python -m pytest tests/test_api.py -v
+RAG_PROD_URL=https://your-domain.com/rag python -m pytest tests/test_api.py -v
 
 # 用 admin token 测
 RAG_TEST_TOKEN=$ADMIN_TOKEN python -m pytest tests/test_api.py -v
@@ -62,8 +62,8 @@ RAG_TEST_TOKEN=$ADMIN_TOKEN python -m pytest tests/test_api.py -v
 | 变量 | 默认值 | 说明 |
 |------|--------|------|
 | `RAG_LOCAL_URL` | `http://localhost:8000` | 本地服务地址 |
-| `RAG_PROD_URL` | `https://yellowduck.top/rag` | 生产环境（不设置则跳过） |
-| `RAG_TEST_TOKEN` | `guest123` | 测试用 Bearer token |
+| `RAG_PROD_URL` | `（可选）` | 生产环境（如 `https://your-domain.com/rag`） |
+| `RAG_TEST_TOKEN` | `（必填）` | 测试用 Bearer token（与 `ADMIN_TOKEN` 或 `GUEST_TOKEN` 一致） |
 
 ---
 
@@ -156,7 +156,7 @@ pip install locust
 RAG_MOCK_LLM=1 sudo env docker compose -f docker/docker-compose.yml up -d
 
 # 再跑压测
-RAG_LOCUST_TOKEN=admin2026 locust -f tests/locustfile.py \
+RAG_LOCUST_TOKEN=&lt;your-token&gt; locust -f tests/locustfile.py \
   --host=http://localhost:8000 \
   --headless -u 5 -r 1 --run-time 1m
 
@@ -212,8 +212,8 @@ tests/
 | `SILICONFLOW_API_KEY` | `docker/.env` | 硅基流动 API Key（嵌入模型） | 必填 |
 | `ADMIN_TOKEN` | `docker/.env` | 管理员密码 | 必填 |
 | `GUEST_TOKEN` | `docker/.env` | 访客密码 | 必填 |
-| `RAG_PROD_URL` | `docker/.env` | 冒烟测试生产地址 | `https://yellowduck.top/rag` |
-| `RAG_TEST_TOKEN` | `docker/.env` | 冒烟测试 Bearer token | `guest123` |
+| `RAG_PROD_URL` | `docker/.env` | 冒烟测试生产地址 | `（可选，如 https://your-domain.com/rag）` |
+| `RAG_TEST_TOKEN` | `docker/.env` | 冒烟测试 Bearer token | `（必填，与 ADMIN_TOKEN 或 GUEST_TOKEN 一致）` |
 | `RAG_LOCAL_URL` | shell 环境 | 冒烟测试本地地址 | `http://localhost:8000` |
 
 ---

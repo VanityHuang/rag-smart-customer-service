@@ -15,7 +15,7 @@ import requests
 
 LOCAL_URL = os.environ.get("RAG_LOCAL_URL", "http://localhost:8000")
 PROD_URL = os.environ.get("RAG_PROD_URL", "")
-TOKEN = os.environ.get("RAG_TEST_TOKEN", "guest")
+TOKEN = os.environ.get("RAG_TEST_TOKEN", "")  # 非空 Token 请在 RAG_TEST_TOKEN 环境变量中设置
 
 # ── 构建测试目标列表 ──
 _TARGETS = [("local", LOCAL_URL)]
